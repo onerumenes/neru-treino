@@ -100,7 +100,8 @@ const MODELO = [
 ];
 
 export function T() {
-  if (!S.treino) S.treino = { plano: [], custom: {}, sessoes: [], atual: null };
+  if (!S.treino) S.treino = { plano: [], custom: {}, sessoes: [], atual: null, cardio: [] };
+  if (!S.treino.cardio) S.treino.cardio = []; // cardio feito (cardio.js)
   return S.treino;
 }
 export const temPlano = () => !!S.treino?.plano?.length;
@@ -176,9 +177,11 @@ export function sugerir(exId, min, max) {
   if (kg > 0 && comRir.length === naCarga.length && comRir.every((s) => s.rir >= 4 && s.reps >= min)) {
     return { kg: kg + passo, ultima: ult, motivo: `Sobraram 4 ou mais repetições em todas as séries: sobe para ${fmtKg(kg + passo)}.` };
   }
-  if (kg > 0 && naCarga[0].reps < min) {
+  // desce quando a maioria das séries na carga ficou abaixo do mínimo (uma série ruim sozinha não basta)
+  const abaixo = naCarga.filter((s) => s.reps < min).length;
+  if (kg > 0 && abaixo > naCarga.length / 2) {
     const menos = Math.max(0, kg - passo);
-    return { kg: menos, ultima: ult, motivo: `Ficou abaixo de ${min} repetições: desce para ${fmtKg(menos)}.` };
+    return { kg: menos, ultima: ult, motivo: `Ficou abaixo de ${min} repetições em ${abaixo} de ${naCarga.length} séries: desce para ${fmtKg(menos)}.` };
   }
   return { kg, ultima: ult, motivo: kg > 0 ? `Mantém ${fmtKg(kg)} e busca mais repetições.` : "Busca mais repetições que da última vez." };
 }
@@ -205,7 +208,7 @@ export function proximoDia() {
 
 // ---------- sessão ----------
 // Ganchos do personal (personal.js), sem import circular: deload ajusta séries e carga da semana de recuperação
-export const GANCHOS = { deload: null };
+export const GANCHOS = { deload: null, cardio: null };
 function exDaSessao(exId, nSeries, min, max) {
   const sug = sugerir(exId, min, max);
   let n = nSeries, kg = sug.kg ?? "";
@@ -232,7 +235,8 @@ export function addExNaSessao(exId) {
   salvar();
 }
 
-// Guarda a sessão só com as séries feitas. Devolve a sessão salva ou null se nada foi feito.
+// Guarda a sessão só com as séries feitas (e o cardio, se houve). Devolve a sessão salva ou null se não houve
+// nenhuma série de musculação.
 export function concluir() {
   const t = T(), a = t.atual;
   if (!a) return null;
@@ -243,9 +247,11 @@ export function concluir() {
     }))
     .filter((x) => x.series.length);
   t.atual = null;
-  if (!ex.length) { salvar(); return null; }
-  const sessao = { id: a.id, d: a.d, dia: a.dia, nome: a.nome, ini: a.ini, fim: Date.now(), ex };
-  t.sessoes.push(sessao);
+  const sessao = ex.length
+    ? { id: a.id, d: a.d, dia: a.dia, nome: a.nome, ini: a.ini, fim: Date.now(), ex, ...(a.folego ? { folego: a.folego } : {}) }
+    : null;
+  if (sessao) t.sessoes.push(sessao);
+  if (a.cardio && GANCHOS.cardio) GANCHOS.cardio(a.cardio, a.d, sessao?.id || null);
   salvar();
   return sessao;
 }

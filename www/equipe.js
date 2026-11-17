@@ -4,8 +4,9 @@
 import { S, hoje, somaDias, totais, salvar, paraData } from "./store.js";
 import { T, exercicio, proximoDia } from "./treino.js";
 import { ritmoPeso, adesao, gastoReal, mudarMetaKcal, aplicarMetas, FONTES, pisoKcal } from "./nutri.js";
-import { blocoAtual, recordes, estagnados, volumeFeito, faixaVolume, e1rm, ehComposto } from "./personal.js";
+import { blocoAtual, recordes, estagnados, volumeFeito, faixaVolume, e1rm } from "./personal.js";
 import { GRUPOS } from "./treino.js";
+import { ehPerna, cardioDoDiaPlano, resumoCardio, reduzirCardio, planoCardio } from "./cardio.js";
 
 const r10 = (x) => Math.round(x / 10) * 10;
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
@@ -43,14 +44,28 @@ export function proteinaBaixa(ate = hoje()) {
   return Math.round(dias.reduce((s, t) => s + t.protein, 0) / 3);
 }
 
-// 0 = descanso, 1 = treino, 2 = treino de perna
-const ehPerna = (exs) => exs.some((x) => ["quadriceps", "posterior", "gluteos"].includes(exercicio(x.ex).g) && ehComposto(x.ex));
-export function diaDeTreino(d = hoje()) {
+// O que o dia tem: treino, perna (pesado), cardio intervalado (feito ou previsto no plano de cardio)
+export function infoDia(d = hoje()) {
   const sessao = T().sessoes.find((s) => s.d === d) || (T().atual?.d === d ? T().atual : null);
-  if (sessao) return ehPerna(sessao.ex) ? 2 : 1;
+  const interv = T().cardio.some((c) => c.d === d && c.modo === "intervalado") || sessao?.cardio?.modo === "intervalado";
+  if (sessao) return { treino: true, perna: ehPerna(sessao.ex), intervalado: interv || (sessao === T().atual && cardioDoDiaPlano(sessao.dia || "", d)?.modo === "intervalado") };
   const dias = S.cfg.lembretes?.diasTreino || [];
-  if (d === hoje() && dias.includes(paraData(d).getDay() + 1)) { const p = proximoDia(); return p && ehPerna(p.ex) ? 2 : 1; }
-  return 0;
+  if (d === hoje() && dias.includes(paraData(d).getDay() + 1)) {
+    const p = proximoDia();
+    return { treino: true, perna: !!p && ehPerna(p.ex), intervalado: interv || (!!p && cardioDoDiaPlano(p.id, d)?.modo === "intervalado") };
+  }
+  return { treino: interv, perna: false, intervalado: interv };
+}
+// 0 = descanso, 1 = treino, 2 = treino pesado (perna ou cardio intervalado)
+export function diaDeTreino(d = hoje()) {
+  const i = infoDia(d);
+  return i.perna || i.intervalado ? 2 : i.treino ? 1 : 0;
+}
+
+// Minutos de cardio nas 2 últimas semanas contra as 2 anteriores
+function cardioSubindo(d) {
+  const a = resumoCardio(d, 14).min, b = resumoCardio(somaDias(d, -14), 14).min;
+  return a >= 90 && a > b * 1.5;
 }
 // O nutri dá mais peso ao pós-treino nos dias de treino (mais ainda no de perna)
 FONTES.diaDeTreino = diaDeTreino;
@@ -82,7 +97,13 @@ export function avisos(d = hoje()) {
   const sonoRuim = (sono != null && sono < 6.5) || (ult && ult.sono <= 2 && somaDias(ult.d, 10) >= d);
   const temp = S.nutri.temporario;
 
-  if (forca?.cai && deficit && !temp) {
+  if (forca?.cai && cardioSubindo(d)) {
+    out.push({
+      id: `cardio-${somaDias(d, -((paraData(d).getDay() + 6) % 7))}`, quem: "Personal", titulo: "Cardio pesando na recuperação",
+      texto: `A força caiu em ${forca.caindo} de ${forca.comuns} exercícios e o cardio cresceu bastante nas últimas 2 semanas. Antes de mexer na comida, o personal sugere reduzir o cardio leve${planoCardio() ? ` para ${Math.max(10, Math.round(planoCardio().leveMin * 0.7))} min` : ""} por um tempo.`,
+      ...(planoCardio() ? { acao: { rotulo: "Reduzir o cardio leve", tipo: "cardio-menos" } } : {}),
+    });
+  } else if (forca?.cai && deficit && !temp) {
     const delta = sonoRuim ? 150 : 100;
     out.push({
       id: `forca-${somaDias(d, -((paraData(d).getDay() + 6) % 7))}`, quem: "Personal e nutri", titulo: "A força está caindo",
@@ -114,11 +135,16 @@ export function avisos(d = hoje()) {
       acao: { rotulo: "O que eu como agora?", tipo: "sugestao" },
     });
   }
-  const tr = d === hoje() ? diaDeTreino(d) : 0;
-  if (tr === 2) {
+  const info = d === hoje() ? infoDia(d) : null;
+  if (info?.perna) {
     out.push({
       id: `perna-${d}`, quem: "Nutri", titulo: "Dia de perna",
       texto: "Treino pesado de perna hoje: põe mais carboidrato antes e depois (arroz, batata, banana, pão). As sugestões de hoje já dão mais espaço ao pós-treino.",
+    });
+  } else if (info?.intervalado) {
+    out.push({
+      id: `interv-${d}`, quem: "Nutri", titulo: "Dia de intervalado",
+      texto: "Cardio forte hoje: põe carboidrato antes e depois (arroz, batata, banana, pão). As sugestões de hoje já dão mais espaço ao pós-treino.",
     });
   }
   if (temp && d <= temp.ate) {
@@ -131,6 +157,7 @@ export function avisos(d = hoje()) {
 export function executarAviso(a) {
   if (a.acao?.tipo === "temporario") aplicarTemporario(a.acao.delta, a.acao.dias);
   else if (a.acao?.tipo === "meta") mudarMetaKcal(a.acao.delta);
+  else if (a.acao?.tipo === "cardio-menos") reduzirCardio();
   dispensar(a.id);
 }
 export function dispensar(id) {
@@ -169,6 +196,10 @@ export function gerarRelatorio(ate = hoje()) {
     if (forca?.cai) t += `. A força caiu em ${forca.caindo} de ${forca.comuns} exercícios`;
     linhas.push(t + ".");
   }
+  const cardio = resumoCardio(ate);
+  if (cardio.sessoes || cardio.folego != null) {
+    linhas.push(`Cardio: ${cardio.sessoes} ${cardio.sessoes === 1 ? "sessão" : "sessões"}, ${cardio.min} min${cardio.km ? `, ${num(cardio.km)} km` : ""}${cardio.intervalados ? ` (${cardio.intervalados} intervalado${cardio.intervalados > 1 ? "s" : ""})` : ""}${cardio.folego != null ? `. Fôlego nos treinos: ${num(cardio.folego)} de 5` : ""}.`);
+  }
   if (sono != null) linhas.push(`Sono: média de ${num(sono)} h${sono < 6.5 ? ", abaixo do ideal para recuperar o treino" : ""}.`);
   const foco = [];
   if (ad.registrados < 5) foco.push("registrar a comida todos os dias");
@@ -183,6 +214,7 @@ export function gerarRelatorio(ate = hoje()) {
     meta_kcal: m.kcal, meta_proteina_g: m.protein, ritmo_kg_semana: ritmo, ritmo_planejado: alvo, treinos: sessoes.length,
     recordes: rec.map((r) => ({ exercicio: r.nome, ganho_pct: r.ganho })), parados: est.map((x) => x.nome), volume_baixo: baixos,
     sono_medio_h: sono != null ? Math.round(sono * 10) / 10 : null, foco,
+    cardio: { sessoes: cardio.sessoes, minutos: cardio.min, km: cardio.km, intervalados: cardio.intervalados, folego_1a5: cardio.folego },
   };
   const r = { d: ate, linhas, fatos, texto: null };
   S.relatorios = [...S.relatorios, r].slice(-26);

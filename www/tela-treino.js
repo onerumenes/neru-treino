@@ -9,6 +9,8 @@ import {
 } from "./treino.js";
 import { secaoPersonal, iniciarDescanso } from "./tela-personal.js";
 import { blocoAtual } from "./personal.js";
+import { secaoCardio, secaoCardioSessao, linhaCardioDia } from "./tela-cardio.js";
+import { descreverCardio } from "./cardio.js";
 
 const hora = (ts) => new Date(ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
@@ -24,7 +26,8 @@ function telaVazia() {
         <button class="botao fraco" data-acao="plano-do-zero">Montar do zero</button>
       </div>
       <button class="botao fraco cheio" data-acao="abrir-avaliacao" style="margin-top:10px">Avaliação com o personal (monta o programa para ti)</button>
-    </div>`;
+    </div>
+    ${secaoCardio()}`;
 }
 
 function telaInicio() {
@@ -37,10 +40,13 @@ function telaInicio() {
       ${prox.ex.length ? `<ul class="lista-ex">${prox.ex.map((x) => `
         <li><span class="oque">${esc(nomeEx(x.ex))}</span><span class="pts"></span><b>${x.series} × ${x.min} a ${x.max}</b></li>`).join("")}</ul>`
       : `<p class="vazio">Este dia ainda não tem exercícios. Adiciona em Editar plano.</p>`}
+      ${linhaCardioDia(prox.id)}
       <button class="botao cheio" data-acao="comecar-treino" data-id="${esc(prox.id)}">Começar treino</button>
     </section>
 
     ${secaoPersonal()}
+
+    ${secaoCardio()}
 
     <section class="secao">
       <h2>Outro treino</h2>
@@ -93,6 +99,7 @@ function telaSessao(a) {
     <p class="texto">Começou às ${hora(a.ini)}. Marca cada série quando terminar; só as marcadas ficam salvas. RIR é quantas repetições ainda sobravam (0 = falha).</p>
     ${blocos || `<p class="vazio">Nenhum exercício ainda.</p>`}
     <button class="botao fraco cheio" data-acao="abrir-biblioteca" data-para="sessao">Adicionar exercício</button>
+    ${secaoCardioSessao(a)}
     <div class="par botoes fim-sessao">
       <button class="botao" data-acao="concluir-treino">Concluir treino</button>
       <button class="botao perigo" data-acao="descartar-treino">Descartar</button>
@@ -196,12 +203,14 @@ FOLHAS.sessao = (f) => {
   const s = T().sessoes.find((x) => x.id === f.id);
   if (!s) return "";
   const min = s.fim && s.ini ? Math.max(1, Math.round((s.fim - s.ini) / 60000)) : 0;
+  const cardio = T().cardio.find((c) => c.sessao === s.id);
   return `
     <h2 id="folha-titulo">${esc(s.nome)}</h2>
-    <p class="texto">${dataCurta(s.d)}${min ? `, ${min} min` : ""}, ${plural(totalSeries(s), "série", "séries")}, ${int(volume(s))} kg de volume</p>
+    <p class="texto">${dataCurta(s.d)}${min ? `, ${min} min` : ""}, ${plural(totalSeries(s), "série", "séries")}, ${int(volume(s))} kg de volume${s.folego ? `, fôlego ${s.folego} de 5` : ""}</p>
     <ul class="lista-ex">
       ${s.ex.map((x) => `<li><span class="oque">${esc(x.nome)}</span><span class="pts"></span><b>${esc(resumoSeries(x.series))}</b></li>`).join("")}
     </ul>
+    ${cardio ? `<p class="texto">Cardio: ${esc(descreverCardio(cardio))}.</p>` : ""}
     <button class="botao perigo cheio" data-acao="excluir-sessao" data-id="${esc(s.id)}">Excluir treino</button>`;
 };
 
@@ -267,10 +276,10 @@ Object.assign(ACOES, {
   },
   "concluir-treino"() {
     const a = T().atual;
-    if (!a.ex.some((x) => x.series.some((s) => s.ok))) return avisar("Marca pelo menos uma série, ou descarta o treino");
-    const s = concluir();
+    if (!a.ex.some((x) => x.series.some((s) => s.ok)) && !a.cardio) return avisar("Marca pelo menos uma série ou registra o cardio, ou descarta o treino");
+    const comCardio = !!a.cardio, s = concluir();
     render(); window.scrollTo(0, 0);
-    avisar(`Treino salvo: ${plural(totalSeries(s), "série", "séries")}`);
+    avisar(s ? `Treino salvo: ${plural(totalSeries(s), "série", "séries")}${comCardio ? " e cardio" : ""}` : "Cardio salvo");
   },
   "descartar-treino"(b) {
     if (!confirmar(b, "Descartar mesmo?")) return;

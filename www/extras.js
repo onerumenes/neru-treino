@@ -3,6 +3,7 @@
 import { S, REFEICOES, salvar, novoId, hoje, somaDias, paraData, diaDe, totais, porcao } from "./store.js";
 import { $, esc, int, dec, lerNum, ui, ACOES, FORMS, FOLHAS, render, avisar, abrirFolha } from "./base.js";
 import { resumoSeries } from "./treino.js";
+import { descreverCardio } from "./cardio.js";
 import { podeCompartilhar, compartilhar } from "./nativo.js";
 
 // ---------- suplementos ----------
@@ -126,9 +127,16 @@ export function gerarTexto(n) {
   if (sessoes.length) {
     L.push("Treinos");
     for (const s of sessoes) {
-      L.push(`${sem(s.d)} ${dm(s.d)}: ${s.nome}`);
+      L.push(`${sem(s.d)} ${dm(s.d)}: ${s.nome}${s.folego ? ` (fôlego ${s.folego} de 5)` : ""}`);
       for (const x of s.ex) L.push(`  ${x.nome}: ${resumoSeries(x.series)}`);
     }
+    L.push("");
+  }
+
+  const cardio = (S.treino?.cardio || []).filter((c) => c.d >= ini && c.d <= h);
+  if (cardio.length) {
+    L.push("Cardio");
+    for (const c of cardio) L.push(`${sem(c.d)} ${dm(c.d)}: ${descreverCardio(c)}`);
     L.push("");
   }
 

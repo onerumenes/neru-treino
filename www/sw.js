@@ -7,6 +7,7 @@ const ARQUIVOS = [
   "corpo.js", "tela-equipe.js", "cardapio.js", "nutri.js", "tela-nutri.js",
   "plano-alimentar.js", "tela-plano.js", "personal.js", "tela-personal.js",
   "ia-local.js", "tela-ia-ajustes.js", "equipe-ia.js", "equipe.js", "tela-relatorio.js", "lembretes.js",
+  "cardio.js", "tela-cardio.js",
   "manifest.webmanifest", "fonte.woff2", "icon.svg", "icon-192.png", "icon-512.png",
 ];
 

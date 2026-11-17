@@ -14,6 +14,7 @@ import { adesao, ritmoPeso, gastoReal } from "./nutri.js";
 import { recordes, estagnados, volumeFeito, faixaVolume, blocoAtual } from "./personal.js";
 import { T, GRUPOS } from "./treino.js";
 import { POSES, sessoesDeFotos, fotoParaIA, ultimasMedidas, composicao } from "./corpo.js";
+import { resumoCardio, faseCardio, planoCardio, evolucaoLeve } from "./cardio.js";
 
 const REGRAS = "Fale português do Brasil, em tom de amigo, direto, sem markdown e sem listas. Use apenas os números que estão nos DADOS; não invente valores. Não dê diagnóstico médico; se algo parecer de saúde, sugira procurar um profissional.";
 export const SISTEMA = {
@@ -41,6 +42,17 @@ export function contextoEquipe() {
       parados: estagnados().map((x) => x.nome),
       series_por_musculo_7_dias: Object.fromEntries(Object.entries(feito).map(([g, v]) => [GRUPOS[g] || g, { feitas: v, faixa: faixaVolume(g) }])),
     },
+    cardio: contextoCardio(),
+  };
+}
+
+function contextoCardio() {
+  const r = resumoCardio(), p = planoCardio(), f = faseCardio(), ev = evolucaoLeve();
+  return {
+    ultimos_7_dias: { sessoes: r.sessoes, minutos: r.min, km: r.km, intervalados: r.intervalados },
+    folego_nos_treinos_1a5: r.folego,
+    plano: p ? { semana: f.semana, fase: f.fase, leve_min: p.leveMin } : null,
+    velocidade_leve_kmh: ev.length > 1 ? { antes: ev[0].v, agora: ev[ev.length - 1].v } : null,
   };
 }
 
@@ -84,7 +96,7 @@ NARRAR_PLANO.retorno = (r) => falar({
 
 NARRAR_PERSONAL.revisao = () => falar({
   sistema: SISTEMA.personal,
-  texto: pedir(contextoEquipe(), "Comente a semana de treino em 3 a 4 frases: recordes, volume por músculo comparado à faixa, exercícios parados, e como a comida, o peso e o sono estão ajudando ou atrapalhando a recuperação."),
+  texto: pedir(contextoEquipe(), "Comente a semana de treino em 3 a 4 frases: recordes, volume por músculo comparado à faixa, exercícios parados, o cardio e o fôlego, e como a comida, o peso e o sono estão ajudando ou atrapalhando a recuperação."),
 });
 
 NARRAR_RELATORIO.relatorio = (r) => falar({

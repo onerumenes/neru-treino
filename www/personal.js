@@ -147,8 +147,7 @@ export function recordes(ate = hoje(), dias = 7) {
       if (!m) continue;
       if (s.d <= ini) antes.set(x.ex, Math.max(antes.get(x.ex) || 0, m));
       else if (s.d <= ate) {
-        const ref = Math.max(antes.get(x.ex) || 0, novos.get(x.ex)?.anterior || 0);
-        if (antes.has(x.ex) && m > (antes.get(x.ex) || 0) * 1.005 && m > (novos.get(x.ex)?.agora || 0)) novos.set(x.ex, { ex: x.ex, nome: nomeEx(x.ex), agora: m, anterior: antes.get(x.ex), d: s.d, ref });
+        if (antes.has(x.ex) && m > (antes.get(x.ex) || 0) * 1.005 && m > (novos.get(x.ex)?.agora || 0)) novos.set(x.ex, { ex: x.ex, nome: nomeEx(x.ex), agora: m, anterior: antes.get(x.ex), d: s.d });
       }
     }
   }

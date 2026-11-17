@@ -4,6 +4,7 @@
 import { S, REFEICOES, diaDe, totais, hoje } from "./store.js";
 import { T, proximoDia } from "./treino.js";
 import { gerarLocal, localPronta } from "./ia-local.js";
+import { cardioDoDiaPlano } from "./cardio.js";
 
 const API = "https://api.openai.com/v1";
 
@@ -80,8 +81,8 @@ function estado(d) {
 
 function treinoResumo() {
   if (!S.treino?.plano?.length) return null;
-  const ult = T().sessoes[T().sessoes.length - 1];
-  return { proximo: proximoDia()?.nome || null, ultimo: ult ? { dia: ult.d, nome: ult.nome } : null };
+  const ult = T().sessoes[T().sessoes.length - 1], prox = proximoDia();
+  return { proximo: prox?.nome || null, cardio_do_proximo: cardioDoDiaPlano(prox?.id)?.texto || null, ultimo: ult ? { dia: ult.d, nome: ult.nome } : null };
 }
 
 async function chamar(caminho, { json, form } = {}) {
