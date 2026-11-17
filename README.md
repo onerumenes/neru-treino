@@ -3,22 +3,65 @@
 Diário de calorias, proteína e treino. Funciona no navegador do celular e como app Android que se
 atualiza sozinho. Os dados ficam só no aparelho.
 
-- **Diário:** 5 refeições, registro manual, favoritos, repetir o de ontem, metas pelo perfil.
-- **IA (OpenAI):** registra, corrige e apaga por texto, foto do prato ou do rótulo, e áudio.
-- **Treino:** plano editável (começa com um modelo de 5 dias), registro de séries e sugestão de carga.
-- **Progresso:** peso, últimos 7 dias, evolução das cargas, sono, exportação em texto.
-- **Suplementos:** lista de marcar no fim do diário de cada dia.
+- **Diário:** 5 refeições, registro manual com busca em 591 alimentos da Tabela TACO e conta automática
+  pelas gramas, favoritos, repetir o de ontem, metas pelo perfil.
+- **Nutri:** "O que eu como agora?" (monta o resto do dia com o que você costuma comer, sem passar da
+  meta), consulta inicial, plano alimentar flexível ou fechado com lista de substituição, gasto real pela
+  evolução do peso, check-in semanal que ajusta a meta e retorno mensal.
+- **Personal:** avaliação (nível, dias, tempo, lesões, prioridades), programa gerado com volume por
+  músculo, RIR por série, cronômetro de descanso, recordes, exercícios parados, blocos de 5 semanas com
+  semana de recuperação, e análise das fotos do físico.
+- **Equipe:** regras que juntam os dois (força caindo em déficit, ganho rápido no bulking, dia de perna,
+  proteína baixa), relatório semanal e lembretes no celular.
+- **Corpo:** peso com tendência, medidas com percentual de gordura (fórmula da Marinha americana), fotos
+  padronizadas com comparação antes e depois. As fotos ficam só no aparelho.
+- **IA híbrida:** um modelo Gemma rodando no próprio celular (LiteRT-LM) e/ou a OpenAI. A IA só explica e
+  conversa; as contas são do app.
+- **Suplementos e sono**, exportação em texto.
+
+## Como o app pensa
+
+As contas (porções, metas, gasto real, volume de treino, progressão) são regras em JavaScript, testáveis
+e iguais sempre. A IA recebe os números prontos e só escreve a explicação, com a instrução de não
+inventar valores. Por isso o modelo pequeno do celular dá conta.
+
+| Arquivo | O que faz |
+|---|---|
+| `www/nutri.js` | Perfil das refeições, "O que eu como agora?", gasto real (regressão do peso), adesão, check-in |
+| `www/cardapio.js` | Alimentos da TACO que o nutri sugere, por grupo, com porção e unidade caseira |
+| `www/plano-alimentar.js` | Plano alimentar e substituições com as mesmas calorias |
+| `www/personal.js` | Gerador de programa, volume, 1RM estimado, recordes, estagnação, blocos e deload |
+| `www/equipe.js` | Regras entre nutri e personal, metas temporárias e relatório semanal |
+| `www/corpo.js` | Medidas, percentual de gordura e fotos (no IndexedDB, fora do backup) |
+| `www/ia.js`, `www/ia-local.js` | Rotas da IA: celular ou OpenAI conforme a tarefa e os Ajustes |
+| `www/equipe-ia.js` | Os textos que a IA escreve sobre os números (sugestão, check-in, retorno, fotos) |
+| `www/lembretes.js` | Notificações de refeição, pesagem, check-in e treino |
+| `plugins/ia-local/` | Plugin Android (Java) que roda o modelo `.litertlm` com o LiteRT-LM |
 
 ## Pastas
 
 | Caminho | O que é |
 |---|---|
 | `www/` | O app em si (HTML, CSS, JS). É aqui que se mexe no dia a dia. |
+| `plugins/ia-local/` | Plugin nativo da IA no celular (entra no APK). |
 | `tools/build.py` | Carimba a versão e gera `dist/app` (vai no APK) e `dist/site` (vai para o GitHub Pages, com `atualizacoes/latest.json` e o zip). |
+| `tools/taco.py` | Gera `www/alimentos.js` a partir da planilha oficial da TACO. |
 | `tools/preparar_android.py` | Ajusta o projeto Android gerado pelo Capacitor: versão, microfone, ícones, assinatura. |
-| `android-recursos/` | Ícones e tela de abertura do APK. |
+| `android-recursos/` | Ícones, ícone das notificações e tela de abertura do APK. |
 | `neru.config.json` | Número do APK (`apk`) e o APK mínimo para o código atual (`apk_min`). |
 | `.github/workflows/` | `publicar.yml` publica a cada envio; `apk.yml` compila o APK. |
+
+## IA no celular
+
+Precisa do APK 3 ou mais novo. Em Ajustes > IA no celular, escolhe o modelo e toca em Baixar (pelo
+Wi-Fi): Gemma 4 E2B (2,6 GB, mais rápido) ou E4B (3,7 GB, entende melhor), da `litert-community` no
+Hugging Face. Se o download pedir login, baixa o `.litertlm` pelo navegador e usa "Escolher arquivo".
+Depois, "Carregar e testar" e liga "Usar a IA do celular".
+
+Rotas: com a IA do celular ligada, o dia a dia (chat, explicações, relatório) roda no celular. Foto de
+prato e retorno mensal vão para a OpenAI se estiverem marcados em Ajustes (vêm marcados). As fotos do
+físico só são vistas pela IA do celular, a não ser que você ligue o contrário. O áudio continua na
+transcrição da OpenAI. Se a IA do celular falhar, a OpenAI assume, quando há chave.
 
 ## Primeira vez (uns 15 minutos)
 
@@ -77,8 +120,13 @@ mensal na conta da OpenAI.
 ## Dados
 
 Tudo fica no aparelho (IndexedDB). Ajustes > Baixar backup gera um `.json` com diário, treinos,
-favoritos, suplementos e metas (sem a chave da OpenAI). Restaurar backup troca tudo pelo do arquivo.
+favoritos, suplementos, medidas, consulta, plano e metas (sem a chave da OpenAI). As fotos do físico e o
+modelo de IA não entram: ficam só no aparelho. Restaurar backup troca tudo pelo do arquivo.
 No app Android, o backup abre a tela de compartilhar do celular (Drive, WhatsApp, Arquivos).
+
+O app não substitui médico, nutricionista nem educador físico. Quem marca algum alerta de saúde na
+consulta (doença renal, diabetes, gestação, histórico de transtorno alimentar e outros) recebe ajustes
+menores e o lembrete de ter acompanhamento profissional.
 
 ## Regras que o app usa
 
@@ -88,5 +136,19 @@ No app Android, o backup abre a tela de compartilhar do celular (Drive, WhatsApp
 - **Carga sugerida (progressão dupla):** fechou o máximo da faixa em todas as séries, sobe um passo
   (2,5 kg na barra, 2 kg nos halteres, 5 a 10 kg em máquinas); ficou abaixo do mínimo, desce um passo;
   no meio, mantém a carga e busca mais repetições.
+
+## Tabela de alimentos
+
+`www/alimentos.js` traz calorias, proteína, carboidrato e gordura por 100 g dos alimentos da **Tabela
+Brasileira de Composição de Alimentos (TACO), 4ª edição revisada e ampliada, NEPA/UNICAMP, 2011**, que
+permite reprodução com citação da fonte. Ficam de fora os 6 itens sem valor de calorias na tabela
+(entre eles leite de vaca integral e desnatado UHT, que estavam "em análise").
+
+Para regerar: baixa `Taco_4a_edicao_2011.xls` (site do NEPA ou a pasta `references` do repositório
+`isaquetdiniz/taco-api`), `pip install xlrd` e `python3 tools/taco.py caminho/Taco_4a_edicao_2011.xls`.
+
+No formulário, cada item guarda as gramas (`g`) e a base por 100 g (`b`). Mudar as gramas recalcula os
+nutrientes. Valores digitados à mão (de um rótulo, por exemplo) viram a base assim que as gramas são
+preenchidas.
 
 Fonte: Bricolage Grotesque, licença SIL OFL 1.1.

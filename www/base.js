@@ -16,6 +16,8 @@ export const ui = {
   ocupado: false, status: "", foto: null, gravando: null, ultimo: null, erroChat: null,
   restaurar: null, testeIA: null,
   treino: "inicio", // "inicio" | "plano"
+  equipe: "resumo", // "resumo" | "corpo" | "plano"
+  fotoComparar: null, poseFoto: null,
 };
 
 // Registros preenchidos pelos módulos

@@ -21,7 +21,7 @@ export function refPelaHora(data = new Date()) {
 }
 
 const padrao = () => ({
-  v: 1,
+  v: 2,
   seq: 0,
   user: null,          // { sexo, idade, altura, peso, atividade, objetivo, ritmo }
   metas: null,         // { kcal, protein, carbs, fat, ... }
@@ -31,7 +31,20 @@ const padrao = () => ({
   chat: [],
   treino: null,        // { plano, custom, sessoes, atual } (ver treino.js)
   supl: [],            // { id, nome, dose }; o que foi tomado fica em dias[d].supl
-  cfg: { chave: "", modeloChat: "gpt-6-luna", modeloFoto: "gpt-6-luna", modeloAudio: "gpt-transcribe" },
+  fotos: [],           // { id, d, pose }; a imagem fica na loja "fotos" do IndexedDB, fora do backup
+  perfil: null,        // anamnese da consulta inicial (consulta.js)
+  nutri: { modo: "flexivel", plano: null, checkins: [], consultas: [] },
+  personal: { avaliacao: null, bloco: null },
+  relatorios: [],      // relatórios semanais da equipe (equipe.js)
+  equipe: { dispensados: {} }, // avisos da equipe já dispensados
+  cfg: {
+    chave: "", modeloChat: "gpt-6-luna", modeloFoto: "gpt-6-luna", modeloAudio: "gpt-transcribe",
+    iaLocal: false,          // usar o modelo no celular quando estiver carregado
+    nuvemFotoPrato: true,    // foto de prato vai para a OpenAI (mais precisa)
+    nuvemRevisao: true,      // retorno mensal com a OpenAI
+    nuvemFotoCorpo: false,   // fotos do físico nunca saem do aparelho, salvo se ligar aqui
+    lembretes: { ativo: false, refeicoes: true, pesagem: true, checkin: true, treino: true, diasTreino: [2, 3, 4, 5, 6] },
+  },
 });
 
 export const S = padrao();
@@ -44,33 +57,43 @@ export const paraData = (d) => { const [a, m, dia] = d.split("-").map(Number); r
 export function somaDias(d, n) { const dt = paraData(d); dt.setDate(dt.getDate() + n); return chaveDia(dt); }
 
 // ---------- gravação ----------
-const NOME_DB = "neru-calorias", LOJA = "kv", CHAVE = "estado";
+const NOME_DB = "neru-calorias", LOJA = "kv", FOTOS = "fotos", CHAVE = "estado";
 let conexao = null;
 
 function abrir() {
   if (conexao) return conexao;
   conexao = new Promise((ok, erro) => {
-    const r = indexedDB.open(NOME_DB, 1);
-    r.onupgradeneeded = () => r.result.createObjectStore(LOJA);
+    const r = indexedDB.open(NOME_DB, 2);
+    r.onupgradeneeded = () => {
+      for (const loja of [LOJA, FOTOS]) if (!r.result.objectStoreNames.contains(loja)) r.result.createObjectStore(loja);
+    };
     r.onsuccess = () => ok(r.result);
-    r.onerror = () => erro(r.error);
+    r.onerror = () => { conexao = null; erro(r.error); };
   });
   return conexao;
 }
-async function idb(modo, fn) {
+async function idb(modo, fn, loja = LOJA) {
   const db = await abrir();
   return new Promise((ok, erro) => {
-    const q = fn(db.transaction(LOJA, modo).objectStore(LOJA));
+    const q = fn(db.transaction(loja, modo).objectStore(loja));
     q.onsuccess = () => ok(q.result);
     q.onerror = () => erro(q.error);
   });
 }
 
+// Imagens grandes (fotos do físico) ficam numa loja separada, para o estado continuar leve
+export const guardarImagem = (id, blob) => idb("readwrite", (s) => s.put(blob, id), FOTOS);
+export const lerImagem = (id) => idb("readonly", (s) => s.get(id), FOTOS);
+export const apagarImagem = (id) => idb("readwrite", (s) => s.delete(id), FOTOS);
+
 function aplicar(dados) {
   const base = padrao();
   for (const k of Object.keys(S)) delete S[k];
   Object.assign(S, base, dados || {});
-  S.cfg = { ...base.cfg, ...(dados?.cfg || {}) };
+  // objetos com campos novos: junta o padrão com o que veio, para dados antigos ganharem os campos
+  for (const k of ["cfg", "nutri", "personal"]) S[k] = { ...base[k], ...(dados?.[k] || {}) };
+  S.cfg.lembretes = { ...base.cfg.lembretes, ...(dados?.cfg?.lembretes || {}) };
+  S.v = base.v;
 }
 
 export async function carregar() {
@@ -102,13 +125,29 @@ export function diaDe(d, criar = false) {
 }
 
 const num = (x, casas = 0) => { const n = Math.max(0, Number(x) || 0), f = 10 ** casas; return Math.round(n * f) / f; };
+const vazio = (v) => v == null || v === "" || !Number.isFinite(Number(v));
+
+// g: peso em gramas (opcional). b: [kcal, proteína, carbo, gordura] por 100 g (opcional; cada um pode ser null).
+// Com os dois, mudar as gramas recalcula os nutrientes.
 export function limparItem(x) {
+  const g = num(x.g, 1), t = Math.round(Number(x.t) || 0);
+  const b = Array.isArray(x.b) && x.b.length === 4 && x.b.some((v) => !vazio(v))
+    ? x.b.map((v) => (vazio(v) ? null : num(v, 2))) : null;
   return {
     ref: REFEICOES.some((r) => r.id === x.ref) ? x.ref : refPelaHora(),
     nome: String(x.nome || "").trim().slice(0, 80) || "Item",
     qtd: String(x.qtd || "").trim().slice(0, 40),
     kcal: num(x.kcal), protein: num(x.protein, 1), carbs: num(x.carbs, 1), fat: num(x.fat, 1),
+    ...(g > 0 ? { g } : {}), ...(b ? { b } : {}), ...(t > 0 ? { t } : {}),
   };
+}
+
+// Texto da porção: a medida caseira e o peso, sem repetir o peso se a medida já diz
+export function porcao(i) {
+  const g = i.g > 0 ? `${(Math.round(i.g * 10) / 10).toLocaleString("pt-BR")} g` : "";
+  if (!g || !i.qtd) return i.qtd || g;
+  const junto = (s) => s.replace(/\s+/g, "").toLowerCase();
+  return junto(i.qtd).includes(junto(g)) ? i.qtd : `${i.qtd}, ${g}`;
 }
 
 export function addItem(d, x) {
@@ -126,6 +165,7 @@ export function editarItem(d, id, campos) {
   const antes = { ...item };
   const limpo = limparItem({ ...item, ...campos });
   Object.assign(item, limpo);
+  for (const k of ["g", "b", "t"]) if (!(k in limpo)) delete item[k];
   salvar();
   return antes;
 }
@@ -157,7 +197,8 @@ export function addFav(nome, itens) {
   const fav = {
     id: novoId("f"),
     nome: String(nome || "").trim().slice(0, 40) || "Favorito",
-    itens: itens.map(({ nome: n, qtd, kcal, protein, carbs, fat }) => ({ nome: n, qtd, kcal, protein, carbs, fat })),
+    itens: itens.map(({ nome: n, qtd, kcal, protein, carbs, fat, g, b, t }) =>
+      ({ nome: n, qtd, kcal, protein, carbs, fat, ...(g ? { g } : {}), ...(b ? { b } : {}), ...(t ? { t } : {}) })),
   };
   S.favs.push(fav);
   salvar();
@@ -169,6 +210,19 @@ export const kcalFav = (f) => f.itens.reduce((s, i) => s + i.kcal, 0);
 // ---------- peso ----------
 export function pesos() {
   return Object.keys(S.dias).filter((d) => S.dias[d].peso > 0).sort().map((d) => ({ d, kg: S.dias[d].peso }));
+}
+
+// ---------- medidas (cm) ----------
+export const MEDIDAS = [
+  { id: "pescoco", nome: "Pescoço", dica: "logo abaixo do pomo de adão" },
+  { id: "cintura", nome: "Cintura", dica: "na altura do umbigo, sem encolher a barriga" },
+  { id: "quadril", nome: "Quadril", dica: "na parte mais larga do bumbum" },
+  { id: "peito", nome: "Peito", dica: "na linha dos mamilos, braços relaxados" },
+  { id: "braco", nome: "Braço", dica: "contraído, na parte mais grossa" },
+  { id: "coxa", nome: "Coxa", dica: "no meio da coxa, em pé" },
+];
+export function medicoes() {
+  return Object.keys(S.dias).filter((d) => S.dias[d].med).sort().map((d) => ({ d, ...S.dias[d].med }));
 }
 
 // ---------- backup ----------

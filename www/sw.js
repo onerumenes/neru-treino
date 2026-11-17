@@ -1,9 +1,12 @@
 // Deixa o app abrir sem internet. Rede primeiro: arquivo novo publicado chega na próxima abertura;
 // sem rede, usa a cópia guardada. As chamadas à OpenAI não passam por aqui.
-const CACHE = "neru-calorias-v2";
+const CACHE = "neru-calorias-v6";
 const ARQUIVOS = [
   "./", "index.html", "style.css", "version.js", "app.js", "base.js", "store.js", "metas.js", "ia.js",
-  "treino.js", "tela-treino.js", "extras.js", "nativo.js",
+  "treino.js", "tela-treino.js", "extras.js", "nativo.js", "tabela.js", "alimentos.js",
+  "corpo.js", "tela-equipe.js", "cardapio.js", "nutri.js", "tela-nutri.js",
+  "plano-alimentar.js", "tela-plano.js", "personal.js", "tela-personal.js",
+  "ia-local.js", "tela-ia-ajustes.js", "equipe-ia.js", "equipe.js", "tela-relatorio.js", "lembretes.js",
   "manifest.webmanifest", "fonte.woff2", "icon.svg", "icon-192.png", "icon-512.png",
 ];
 

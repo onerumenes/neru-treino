@@ -161,6 +161,7 @@ input::placeholder, textarea::placeholder { color: #8E808A; }
 input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; border-color: var(--gema); }
+.grade2 { display: grid; grid-template-columns: 1fr 1.6fr; gap: 8px; }
 .grade4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; align-items: end; }
 .grade3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .grade4 input, .grade3 input { padding-left: 8px; padding-right: 4px; }
@@ -206,6 +207,13 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
 .tirar { flex: none; min-width: 40px; padding: 0 8px; text-align: center; color: var(--farinha); font-size: 20px; }
 .tirar.certeza { color: var(--pimenta); font-size: 14px; font-weight: 600; }
 .dica { font-size: 14px; color: var(--farinha); }
+.achados { margin: -4px 0 14px; max-height: 300px; overflow-y: auto; overscroll-behavior: contain; border-radius: 10px; box-shadow: inset 0 0 0 1.5px var(--borda); }
+.achados li + li { border-top: 1px solid var(--borda); }
+.achados button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 52px; padding: 8px 12px; }
+.achados button:active { background: var(--feijao); }
+.achados small { flex: none; text-align: right; line-height: 1.25; }
+.achados .nada { padding: 12px; font-size: 14px; color: var(--farinha); }
+.por100 { margin: -4px 0 12px; color: var(--couve); }
 
 /* ---------- aviso ---------- */
 #aviso {
@@ -387,3 +395,143 @@ summary { min-height: 44px; display: flex; align-items: center; color: var(--gem
 .colunas-sono .col i { display: block; width: 100%; background: var(--ceia, #C9608A); }
 .colunas-sono b { font-weight: 600; }
 #texto-exportado { min-height: 260px; margin-bottom: 14px; font-size: 14px; line-height: 1.5; resize: vertical; white-space: pre-wrap; }
+
+/* ---------- equipe: sub-abas ---------- */
+.segmentos { display: flex; gap: 4px; padding: 4px; margin: 0 0 22px; background: var(--panela); border-radius: 12px; }
+.segmentos button { flex: 1; min-height: 40px; text-align: center; font-weight: 600; color: var(--farinha); border-radius: 9px; }
+.segmentos button[aria-selected=true] { background: var(--arroz); color: var(--feijao); }
+.grafico .media { stroke: var(--arroz); stroke-width: 1.5; opacity: .55; }
+
+/* ---------- corpo: medidas e fotos ---------- */
+.gordura { font-size: 17px; margin-bottom: 4px; }
+.gordura b { font-size: 40px; font-weight: 800; font-stretch: 78%; color: var(--gema); margin-right: 4px; }
+.gordura small { display: block; }
+.medidas { margin: 14px 0 8px; }
+.medidas small { flex: none; min-width: 44px; text-align: right; }
+.tiras { margin-bottom: 14px; }
+.tiras li { border-top: 1px solid var(--borda); }
+.tiras li:last-child { border-bottom: 1px solid var(--borda); }
+.tiras button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 8px 0; font-weight: 600; }
+.mini-fotos { display: flex; gap: 4px; }
+.mini-fotos img, .mini-fotos i { display: block; width: 36px; height: 48px; object-fit: cover; border-radius: 6px; background: var(--panela); }
+.comparar { margin: 6px 0 16px; }
+.comparar .par { margin-bottom: 10px; }
+.poses span { min-height: 38px; }
+.deslizante { position: relative; aspect-ratio: 3 / 4; overflow: hidden; border-radius: 12px; background: var(--panela); }
+.deslizante img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.deslizante .cima { clip-path: inset(0 0 0 var(--corte)); }
+.deslizante::after { content: ""; position: absolute; top: 0; bottom: 0; left: var(--corte); width: 2px; margin-left: -1px; background: var(--arroz); }
+.deslizante .rot { position: absolute; bottom: 8px; padding: 2px 8px; border-radius: 6px; background: rgba(15, 9, 13, .7); font-size: 13px; }
+.deslizante .rot.a { left: 8px; } .deslizante .rot.b { right: 8px; }
+#corte { width: 100%; min-height: 36px; padding: 0; border: 0; background: none; accent-color: var(--gema); }
+.dicas { margin: 0 0 14px 18px; list-style: disc; color: var(--farinha); font-size: 14px; }
+.dicas li { margin-bottom: 4px; }
+.poses-grade { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+.pose { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+.pose img, .pose .guia { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 10px; background: var(--feijao); }
+.pose .guia { display: grid; place-items: center; box-shadow: inset 0 0 0 1.5px var(--borda); }
+.pose .guia svg { height: 80%; fill: none; stroke: var(--farinha); stroke-width: 1.5; stroke-linejoin: round; }
+.pose .link { padding: 4px 0; font-size: 14px; }
+.sem-foto { display: grid; place-items: center; width: 100%; aspect-ratio: 3 / 4; border-radius: 10px; background: var(--panela); color: var(--farinha); font-size: 12px; font-style: normal; text-align: center; padding: 6px; }
+.mini-fotos .sem-foto { width: 36px; height: 48px; font-size: 0; }
+.series .rir { flex: 0 0 64px; }
+
+/* ---------- nutri ---------- */
+.cartao-nutri { margin: 0 0 18px; padding: 14px 16px; border-left: 3px solid var(--couve); background: var(--panela); border-radius: 0 12px 12px 0; }
+.cartao-nutri p { margin-bottom: 10px; }
+.cartao-nutri p:last-child { margin-bottom: 0; }
+.cartao-nutri b { color: var(--arroz); }
+.aviso-equipe { display: flex; flex-direction: column; width: 100%; margin: 0 0 12px; padding: 12px 16px; border-radius: 12px; background: var(--gema); color: var(--feijao); }
+.aviso-equipe span { font-size: 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.chips button { min-height: 36px; padding: 6px 12px; border-radius: 18px; font-size: 14px; box-shadow: inset 0 0 0 1.5px var(--borda); color: var(--farinha); }
+.chips button.on { background: var(--arroz); color: var(--feijao); box-shadow: none; font-weight: 600; }
+.sug-ref { padding: 14px 0; border-top: 1px solid var(--borda); }
+#folha .sug-ref h3 { display: flex; justify-content: space-between; align-items: baseline; font-size: 18px; font-weight: 700; color: var(--arroz); margin-bottom: 6px; }
+.sug-ref .lista-ex { margin-bottom: 4px; }
+.sug-ref .par { margin-top: 12px; }
+.novo { font-style: normal; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--feijao); background: var(--couve); padding: 1px 6px; border-radius: 6px; vertical-align: 2px; }
+.total-sug { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--borda); color: var(--farinha); }
+.total-sug b { color: var(--arroz); }
+.narracao { margin: 0 0 16px; padding: 12px 14px; border-left: 3px solid var(--couve); background: var(--feijao); border-radius: 0 10px 10px 0; white-space: pre-wrap; }
+.escala { margin-bottom: 16px; }
+.escala legend { margin-bottom: 6px; font-size: 15px; }
+.escala div { display: flex; gap: 6px; }
+.escala label { position: relative; flex: 1; }
+.escala input { position: absolute; opacity: 0; inset: 0; }
+.escala span { display: grid; place-items: center; min-height: 44px; border-radius: 10px; box-shadow: inset 0 0 0 1.5px var(--borda); font-weight: 600; }
+.escala input:checked + span { background: var(--arroz); color: var(--feijao); box-shadow: none; }
+.escala input:focus-visible + span { outline: 2px solid var(--gema); outline-offset: 2px; }
+.escala p { display: flex; justify-content: space-between; margin-top: 4px; }
+.motivos { margin: 0 0 16px 18px; list-style: disc; }
+.motivos li { margin-bottom: 8px; }
+.destaque { font-size: 16px; margin-bottom: 4px; }
+.destaque b { font-size: 34px; font-weight: 800; font-stretch: 78%; color: var(--gema); margin-right: 4px; }
+.destaque small { display: block; }
+.habitos li { padding: 8px 0; }
+
+/* ---------- consulta e plano alimentar ---------- */
+.passos { display: flex; gap: 4px; margin-bottom: 18px; counter-reset: passo; }
+.passos li { flex: 1; padding-top: 6px; border-top: 3px solid var(--borda); font-size: 12px; color: var(--farinha); }
+.passos li.feito { border-top-color: var(--couve); }
+.passos li.atual { border-top-color: var(--gema); color: var(--arroz); font-weight: 700; }
+.opcoes.multi span { white-space: normal; }
+.opcoes.multi label { flex: 1 1 40%; }
+.opcoes.lista-vertical { flex-direction: column; }
+.opcoes.lista-vertical span { justify-content: flex-start; text-align: left; }
+.opcoes input[type=checkbox] { position: absolute; opacity: 0; inset: 0; }
+.opcoes input[type=checkbox]:checked + span { background: var(--arroz); color: var(--feijao); font-weight: 700; box-shadow: none; }
+textarea { resize: vertical; }
+.confirma.suave { box-shadow: inset 0 0 0 1.5px var(--gema); margin: 0 0 16px; }
+.confirma .link { display: block; }
+.plano-ref { padding: 12px 0 6px; border-top: 1px solid var(--borda); }
+.plano-ref h3, #folha .plano-ref h3 { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 18px; font-weight: 700; color: var(--arroz); margin-bottom: 6px; }
+.plano-ref h3 small { font-weight: 400; }
+.grupo-plano { margin: 0; border-bottom: 1px dotted var(--borda); }
+.grupo-plano summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 52px; padding: 6px 0; color: var(--arroz); font-weight: 500; list-style: none; }
+.grupo-plano summary::-webkit-details-marker { display: none; }
+.grupo-plano summary b { flex: none; font-weight: 600; }
+.subst { padding: 0 0 10px 12px; }
+.subst li { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; font-size: 14.5px; }
+.subst small { flex: none; text-align: right; }
+
+/* ---------- personal ---------- */
+.personal h3, #folha h3.volume-t { font-size: 15px; font-weight: 700; margin: 16px 0 6px; }
+.bloco-status { margin-bottom: 12px; padding: 10px 14px; border-radius: 10px; background: var(--panela); }
+.bloco-status.deload { box-shadow: inset 0 0 0 1.5px var(--couve); }
+.volume { margin: 6px 0 4px; }
+.volume li { display: grid; grid-template-columns: 112px 1fr 30px; align-items: center; gap: 10px; padding: 4px 0; font-size: 14px; }
+.volume .barra { height: 8px; overflow: visible; }
+.volume .barra i { background: var(--couve); border-radius: 4px; min-width: 0; }
+.volume .baixo .barra i { background: var(--gema); }
+.volume .alto .barra i { background: var(--pimenta); }
+.volume .barra .marca { top: -3px; bottom: -3px; background: var(--farinha); }
+.volume li > b { text-align: right; font-weight: 600; }
+#descanso {
+  position: fixed; left: 12px; right: 12px; bottom: calc(var(--abas) + var(--baixo) + 10px); z-index: 25;
+  max-width: 516px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 14px; border-radius: 12px; background: var(--couve); color: var(--feijao); font-weight: 500;
+}
+#descanso b { font-size: 20px; font-weight: 800; font-stretch: 80%; }
+#descanso button { padding: 8px 10px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+#descanso .acoes { display: flex; gap: 4px; }
+body:has(#descanso:not([hidden])) #aviso { bottom: calc(var(--abas) + var(--baixo) + 76px); }
+
+/* ---------- IA no celular ---------- */
+.via { display: block; margin-top: 4px; font-size: 12px; color: var(--farinha); }
+.estado-ia { margin-bottom: 10px; }
+.progresso { position: relative; margin: 6px 0 12px; padding: 10px 12px; border-radius: 10px; background: var(--feijao); overflow: hidden; font-size: 14px; }
+.progresso span { position: relative; z-index: 1; }
+.progresso i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--couve); opacity: .35; transition: width .3s; }
+
+/* ---------- avisos da equipe e relatório ---------- */
+.avisos-time { margin-bottom: 18px; }
+.aviso-time { margin: 0 0 12px; padding: 12px 14px; border-radius: 12px; box-shadow: inset 0 0 0 1.5px var(--gema); }
+.aviso-time.fixo { box-shadow: inset 0 0 0 1.5px var(--borda); }
+.aviso-time p { margin-bottom: 6px; }
+.aviso-time small { color: var(--gema); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+.tela-hoje .aviso-time { margin-bottom: 12px; }
+.relatorio h2 small { font-size: 14px; font-weight: 400; }
+.relatorio p { margin-bottom: 8px; }
+.dias-treino label { flex: 0 0 auto; }
+.dias-treino span { min-width: 46px; }

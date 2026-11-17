@@ -5,7 +5,7 @@ name: Gerar APK
 on:
   push:
     branches: [main]
-    paths: ["neru.config.json", "package.json", "capacitor.config.json", "android-recursos/**", "tools/preparar_android.py"]
+    paths: ["neru.config.json", "package.json", "capacitor.config.json", "android-recursos/**", "plugins/**", "tools/preparar_android.py"]
   workflow_dispatch:
 
 permissions:

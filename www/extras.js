@@ -1,6 +1,6 @@
 // Extras: suplementos do dia, registro de sono e exportação do período em texto.
 
-import { S, REFEICOES, salvar, novoId, hoje, somaDias, paraData, diaDe, totais } from "./store.js";
+import { S, REFEICOES, salvar, novoId, hoje, somaDias, paraData, diaDe, totais, porcao } from "./store.js";
 import { $, esc, int, dec, lerNum, ui, ACOES, FORMS, FOLHAS, render, avisar, abrirFolha } from "./base.js";
 import { resumoSeries } from "./treino.js";
 import { podeCompartilhar, compartilhar } from "./nativo.js";
@@ -116,7 +116,7 @@ export function gerarTexto(n) {
       L.push(`${sem(d)} ${dm(d)}: ${int(t.kcal)} kcal, proteína ${int(t.protein)} g, carbo ${int(t.carbs)} g, gordura ${int(t.fat)} g`);
       for (const r of REFEICOES) {
         const itens = diaDe(d).itens.filter((i) => i.ref === r.id);
-        if (itens.length) L.push(`  ${r.nome}: ${itens.map((i) => `${i.nome}${i.qtd ? ` (${i.qtd})` : ""} ${int(i.kcal)} kcal`).join("; ")}`);
+        if (itens.length) L.push(`  ${r.nome}: ${itens.map((i) => `${i.nome}${porcao(i) ? ` (${porcao(i)})` : ""} ${int(i.kcal)} kcal`).join("; ")}`);
       }
     }
     L.push(`Média ${comComida.length === 1 ? "do dia" : `dos ${comComida.length} dias`} com registro: ${int(sk / comComida.length)} kcal e ${int(sp / comComida.length)} g de proteína`, "");

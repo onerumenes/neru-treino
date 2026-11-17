@@ -7,6 +7,8 @@ import {
   sugerir, resumoSeries, fmtKg, proximoDia, iniciar, addExNaSessao, concluir, descartar, removerSessao,
   volume, totalSeries, evolucao,
 } from "./treino.js";
+import { secaoPersonal, iniciarDescanso } from "./tela-personal.js";
+import { blocoAtual } from "./personal.js";
 
 const hora = (ts) => new Date(ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
@@ -21,6 +23,7 @@ function telaVazia() {
         <button class="botao" data-acao="usar-modelo">Usar o modelo de 5 dias</button>
         <button class="botao fraco" data-acao="plano-do-zero">Montar do zero</button>
       </div>
+      <button class="botao fraco cheio" data-acao="abrir-avaliacao" style="margin-top:10px">Avaliação com o personal (monta o programa para ti)</button>
     </div>`;
 }
 
@@ -37,6 +40,8 @@ function telaInicio() {
       <button class="botao cheio" data-acao="comecar-treino" data-id="${esc(prox.id)}">Começar treino</button>
     </section>
 
+    ${secaoPersonal()}
+
     <section class="secao">
       <h2>Outro treino</h2>
       <ul class="linhas">
@@ -45,6 +50,8 @@ function telaInicio() {
       </ul>
       <button class="botao fraco cheio" data-acao="editar-plano">Editar plano</button>
     </section>
+
+    ${secaoCargas()}
 
     <section class="secao">
       <h2>Histórico</h2>
@@ -70,6 +77,7 @@ function telaSessao(a) {
               <span class="n">${j + 1}</span>
               <label><input type="number" inputmode="decimal" step="0.5" min="0" data-campo="kg" data-i="${i}" data-j="${j}" value="${s.kg}" aria-label="Carga da série ${j + 1}, em kg"><small>kg</small></label>
               <label><input type="number" inputmode="numeric" step="1" min="0" data-campo="reps" data-i="${i}" data-j="${j}" value="${s.reps}" placeholder="${antes[j]?.reps ?? x.max}" aria-label="Repetições da série ${j + 1}"><small>reps</small></label>
+              <label class="rir"><input type="number" inputmode="numeric" step="1" min="0" max="10" data-campo="rir" data-i="${i}" data-j="${j}" value="${s.rir ?? ""}" placeholder="–" aria-label="RIR da série ${j + 1}: quantas repetições ainda sobravam"><small>RIR</small></label>
               <button class="marcar" data-acao="marcar-serie" data-i="${i}" data-j="${j}" aria-pressed="${s.ok}" aria-label="${s.ok ? "Desmarcar" : "Marcar"} a série ${j + 1} de ${esc(x.nome)}">${ICONE.feito}</button>
             </li>`).join("")}
         </ol>
@@ -81,7 +89,8 @@ function telaSessao(a) {
       </section>`;
   }).join("");
   return `
-    <p class="texto">Começou às ${hora(a.ini)}. Marca cada série quando terminar; só as marcadas ficam salvas.</p>
+    ${blocoAtual()?.deload ? `<p class="bloco-status deload">Semana de recuperação: as séries e cargas já vieram reduzidas.</p>` : ""}
+    <p class="texto">Começou às ${hora(a.ini)}. Marca cada série quando terminar; só as marcadas ficam salvas. RIR é quantas repetições ainda sobravam (0 = falha).</p>
     ${blocos || `<p class="vazio">Nenhum exercício ainda.</p>`}
     <button class="botao fraco cheio" data-acao="abrir-biblioteca" data-para="sessao">Adicionar exercício</button>
     <div class="par botoes fim-sessao">
@@ -141,7 +150,7 @@ export const telaTreino = {
   },
 };
 
-// Seção "Cargas" da aba Progresso
+// Seção "Cargas" da tela inicial do treino
 export function secaoCargas() {
   const lista = evolucao();
   if (!lista.length) return "";
@@ -236,14 +245,19 @@ Object.assign(ACOES, {
     if (s.ok) { s.ok = false; salvar(); render(); return; }
     const linha = b.closest("li");
     const kg = lerNum($("[data-campo=kg]", linha).value), reps = Math.round(lerNum($("[data-campo=reps]", linha).value));
+    const rirTxt = $("[data-campo=rir]", linha).value;
+    s.rir = rirTxt === "" ? "" : Math.min(10, Math.max(0, Math.round(lerNum(rirTxt))));
     if (!(reps > 0)) { avisar("Preenche as repetições desta série"); $("[data-campo=reps]", linha).focus(); return; }
     s.kg = kg; s.reps = reps; s.ok = true;
     for (const depois of x.series.slice(j + 1)) if (!depois.ok && depois.kg === "") depois.kg = kg;
     salvar(); render();
+    // descanso, salvo depois da última série do treino
+    const fim = T().atual.ex.every((y) => y.series.every((z) => z.ok));
+    if (!fim) iniciarDescanso(x.ex);
   },
   "mais-serie"(b) {
     const x = T().atual.ex[b.dataset.i], ult = x.series[x.series.length - 1];
-    x.series.push({ kg: ult?.kg ?? "", reps: "", ok: false });
+    x.series.push({ kg: ult?.kg ?? "", reps: "", rir: "", ok: false });
     salvar(); render();
   },
   "menos-serie"(b) { T().atual.ex[b.dataset.i].series.pop(); salvar(); render(); },
@@ -282,7 +296,7 @@ MUDANCAS.push((el) => {
   const campo = el.dataset?.campo;
   if (!campo) return false;
   const t = T(), i = Number(el.dataset.i), j = Number(el.dataset.j);
-  if (campo === "kg" || campo === "reps") {
+  if (campo === "kg" || campo === "reps" || campo === "rir") {
     const s = t.atual?.ex[i]?.series[j];
     if (!s) return true;
     s[campo] = el.value === "" ? "" : campo === "kg" ? Math.max(0, lerNum(el.value)) : Math.max(0, Math.round(lerNum(el.value)));

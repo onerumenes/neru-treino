@@ -11,8 +11,10 @@
     "@capacitor/android": "8.6.2",
     "@capacitor/core": "8.6.2",
     "@capacitor/filesystem": "8.1.5",
+    "@capacitor/local-notifications": "8.3.1",
     "@capacitor/share": "8.0.3",
-    "@capawesome/capacitor-live-update": "8.8.1"
+    "@capawesome/capacitor-live-update": "8.8.1",
+    "neru-ia-local": "file:plugins/ia-local"
   },
   "devDependencies": {
     "@capacitor/cli": "8.6.2"

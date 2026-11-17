@@ -1,7 +1,9 @@
-// Conversa com a OpenAI direto do aparelho, com a chave do próprio usuário.
-// Texto e foto vão para a Responses API; áudio vai para a transcrição e volta como texto.
+// IA híbrida: o modelo no celular (ia-local.js) ou a OpenAI com a chave do próprio usuário, conforme a tarefa
+// e os Ajustes. Texto e foto vão para a Responses API ou para o modelo local; áudio vai para a transcrição da OpenAI.
 
 import { S, REFEICOES, diaDe, totais, hoje } from "./store.js";
+import { T, proximoDia } from "./treino.js";
+import { gerarLocal, localPronta } from "./ia-local.js";
 
 const API = "https://api.openai.com/v1";
 
@@ -9,13 +11,13 @@ export class ErroIA extends Error {
   constructor(tipo, mensagem) { super(mensagem); this.tipo = tipo; }
 }
 
-const PROMPT = `Você é o assistente de nutrição do app Neru Calorias, um diário de calorias e proteína.
+const PROMPT = `Você é a equipe do app Neru Calorias: o nutricionista e o personal trainer da pessoa, trabalhando juntos.
 Fale português do Brasil, em tom de amigo, curto e direto: 1 a 3 frases, sem markdown.
 
 Em cada mensagem você recebe o ESTADO do dia (metas, itens já registrados com seus ids, totais, hora atual), a CONVERSA recente e a MENSAGEM atual, que pode vir com uma foto.
 
 Regras:
-1. Quando a pessoa disser que comeu ou bebeu algo, registre cada alimento separado em "add", estimando kcal, proteína, carboidrato e gordura em gramas. Baseie-se na Tabela TACO e em rótulos comuns no Brasil. Se a quantidade não for dita, assuma uma porção típica e diga qual assumiu.
+1. Quando a pessoa disser que comeu ou bebeu algo, registre cada alimento separado em "add", estimando kcal, proteína, carboidrato e gordura em gramas. Baseie-se na Tabela TACO e em rótulos comuns no Brasil. Se a quantidade não for dita, assuma uma porção típica e diga qual assumiu. Em "grams" ponha o peso estimado da porção em gramas (bebidas: ml). Em "qty" ponha só a medida caseira, sem repetir o peso (ex.: "2 unidades", "1 concha"), ou "" se não houver.
 2. Foto de prato: identifique os alimentos e estime as porções pelo que aparece. Foto de rótulo ou tabela nutricional: use os valores do rótulo para a porção consumida; se a porção não estiver clara, assuma uma porção do rótulo e avise.
 3. "meal" é um dos ids de refeição do estado. Use a refeição que a pessoa disser; se não disser, deduza pela hora atual.
 4. Para corrigir ou apagar algo já registrado, use "update" (id e só os campos que mudam; os demais ficam null) ou "remove" (lista de ids). Use somente ids que existem no estado.
@@ -24,7 +26,7 @@ Regras:
 7. Em "reply", confirme o que foi registrado com o total de kcal e proteína, e diga quanto falta para as metas quando elas existirem.
 
 Responda sempre com um objeto JSON neste formato:
-{"reply": "texto", "add": [{"meal": "id", "name": "alimento", "qty": "quantidade", "kcal": 0, "protein": 0, "carbs": 0, "fat": 0}], "update": [{"id": "id", "meal": null, "name": null, "qty": null, "kcal": null, "protein": null, "carbs": null, "fat": null}], "remove": ["id"]}`;
+{"reply": "texto", "add": [{"meal": "id", "name": "alimento", "qty": "medida caseira", "grams": 0, "kcal": 0, "protein": 0, "carbs": 0, "fat": 0}], "update": [{"id": "id", "meal": null, "name": null, "qty": null, "grams": null, "kcal": null, "protein": null, "carbs": null, "fat": null}], "remove": ["id"]}`;
 
 function esquema() {
   const refs = REFEICOES.map((r) => r.id);
@@ -38,18 +40,18 @@ function esquema() {
         type: "array",
         items: {
           type: "object", additionalProperties: false,
-          required: ["meal", "name", "qty", "kcal", "protein", "carbs", "fat"],
-          properties: { meal: { type: "string", enum: refs }, name: txt, qty: txt, kcal: n, protein: n, carbs: n, fat: n },
+          required: ["meal", "name", "qty", "grams", "kcal", "protein", "carbs", "fat"],
+          properties: { meal: { type: "string", enum: refs }, name: txt, qty: txt, grams: nOuNada, kcal: n, protein: n, carbs: n, fat: n },
         },
       },
       update: {
         type: "array",
         items: {
           type: "object", additionalProperties: false,
-          required: ["id", "meal", "name", "qty", "kcal", "protein", "carbs", "fat"],
+          required: ["id", "meal", "name", "qty", "grams", "kcal", "protein", "carbs", "fat"],
           properties: {
             id: txt, meal: { type: ["string", "null"], enum: [...refs, null] },
-            name: txtOuNada, qty: txtOuNada, kcal: nOuNada, protein: nOuNada, carbs: nOuNada, fat: nOuNada,
+            name: txtOuNada, qty: txtOuNada, grams: nOuNada, kcal: nOuNada, protein: nOuNada, carbs: nOuNada, fat: nOuNada,
           },
         },
       },
@@ -67,12 +69,19 @@ function estado(d) {
     objetivo: S.user?.objetivo || null,
     metas: m ? { kcal: m.kcal, proteina_g: m.protein } : null,
     registrado: diaDe(d).itens.map((i) => ({
-      id: i.id, refeicao: i.ref, nome: i.nome, quantidade: i.qtd,
+      id: i.id, refeicao: i.ref, nome: i.nome, quantidade: i.qtd, gramas: i.g || null,
       kcal: i.kcal, proteina_g: i.protein, carbo_g: i.carbs, gordura_g: i.fat,
     })),
     totais: { kcal: Math.round(t.kcal), proteina_g: r1(t.protein), carbo_g: r1(t.carbs), gordura_g: r1(t.fat) },
     falta: m ? { kcal: Math.round(m.kcal - t.kcal), proteina_g: r1(m.protein - t.protein) } : null,
+    treino: treinoResumo(),
   };
+}
+
+function treinoResumo() {
+  if (!S.treino?.plano?.length) return null;
+  const ult = T().sessoes[T().sessoes.length - 1];
+  return { proximo: proximoDia()?.nome || null, ultimo: ult ? { dia: ult.d, nome: ult.nome } : null };
 }
 
 async function chamar(caminho, { json, form } = {}) {
@@ -110,7 +119,10 @@ function textoDa(resposta) {
 }
 
 function lerJson(texto) {
-  const limpo = String(texto).trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  // modelos pequenos às vezes escrevem algo antes ou depois do JSON
+  let limpo = String(texto).trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  const a = limpo.indexOf("{"), b = limpo.lastIndexOf("}");
+  if (a > 0 || (b >= 0 && b < limpo.length - 1)) limpo = limpo.slice(a, b + 1);
   const obj = JSON.parse(limpo);
   return {
     reply: String(obj.reply || "").trim(),
@@ -122,11 +134,64 @@ function lerJson(texto) {
 
 // texto: mensagem da pessoa. imagem: data URL JPEG (opcional). d: dia em que registrar.
 // historico: mensagens anteriores à atual, no formato do S.chat.
-export async function conversar({ texto, imagem, d, historico = [] }) {
-  const conversa = historico.slice(-8)
+function montarBloco({ texto, d, historico }, nMsgs = 8) {
+  const conversa = historico.slice(-nMsgs)
     .map((m) => `${m.de === "eu" ? "Pessoa" : "Assistente"}: ${m.texto || (m.foto ? "(enviou uma foto)" : "")}`)
     .join("\n");
-  const bloco = `ESTADO:\n${JSON.stringify(estado(d))}\n\nCONVERSA:\n${conversa || "(começo da conversa)"}\n\nMENSAGEM:\n${texto || "(sem texto, só a foto)"}`;
+  return `ESTADO:\n${JSON.stringify(estado(d))}\n\nCONVERSA:\n${conversa || "(começo da conversa)"}\n\nMENSAGEM:\n${texto || "(sem texto, só a foto)"}`;
+}
+
+// ---------- rotas: celular ou nuvem ----------
+export let ultimaRota = "";
+export function rotaPara(tarefa) {
+  const c = S.cfg, loc = localPronta(c), nuv = !!c.chave;
+  const ordem = {
+    foto_corpo: [loc && "local", nuv && c.nuvemFotoCorpo && "nuvem"],
+    foto_prato: [nuv && c.nuvemFotoPrato && "nuvem", loc && "local", nuv && "nuvem"],
+    revisao: [nuv && c.nuvemRevisao && "nuvem", loc && "local", nuv && "nuvem"],
+  }[tarefa] || [loc && "local", nuv && "nuvem"];
+  return [...new Set(ordem.filter(Boolean))];
+}
+export const temIA = (tarefa) => rotaPara(tarefa).length > 0;
+
+async function comRota(tarefa, local, nuvem) {
+  const rotas = rotaPara(tarefa);
+  if (!rotas.length) {
+    throw tarefa === "foto_corpo"
+      ? new ErroIA("sem-local", "As fotos do físico só são analisadas pela IA do celular. Baixa o modelo em Ajustes > IA no celular.")
+      : new ErroIA("sem-chave", "Liga a IA do celular ou cola a chave da OpenAI em Ajustes.");
+  }
+  let erro;
+  for (const r of rotas) {
+    try { const v = await (r === "local" ? local() : nuvem()); ultimaRota = r; return v; } catch (e) { erro = e; }
+  }
+  throw erro;
+}
+
+// Texto livre (explicações do nutri e do personal), com até 2 imagens
+export function falar({ tarefa = "narrar", sistema, texto, imagens = [] }) {
+  return comRota(tarefa,
+    async () => { const r = await gerarLocal({ sistema, texto, imagens }); if (!r) throw new ErroIA("formato", "A IA do celular não respondeu."); return r; },
+    async () => {
+      const content = [{ type: "input_text", text: texto }, ...imagens.map((u) => ({ type: "input_image", image_url: u, detail: "auto" }))];
+      const r = await chamar("/responses", { json: { model: imagens.length ? S.cfg.modeloFoto : S.cfg.modeloChat, instructions: sistema, input: [{ role: "user", content }], store: false } });
+      return textoDa(r).trim();
+    });
+}
+
+export function conversar(args) {
+  return comRota(args.imagem ? "foto_prato" : "registro", () => conversarLocal(args), () => conversarNuvem(args));
+}
+
+async function conversarLocal({ texto, imagem, d, historico = [] }) {
+  const sistema = `${PROMPT}\n\nResponda SOMENTE com o objeto JSON, sem nada antes ou depois.`;
+  const saida = await gerarLocal({ sistema, texto: montarBloco({ texto, d, historico }, 4), imagens: imagem ? [imagem] : [] });
+  try { return lerJson(saida); }
+  catch { throw new ErroIA("formato", "A IA do celular respondeu num formato que não deu para ler."); }
+}
+
+async function conversarNuvem({ texto, imagem, d, historico = [] }) {
+  const bloco = montarBloco({ texto, d, historico });
   const content = [{ type: "input_text", text: bloco }];
   if (imagem) content.push({ type: "input_image", image_url: imagem, detail: "auto" });
 

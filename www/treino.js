@@ -171,6 +171,11 @@ export function sugerir(exId, min, max) {
   if (kg > 0 && naCarga.every((s) => s.reps >= max)) {
     return { kg: kg + passo, ultima: ult, motivo: `Fechou ${max} em todas as séries: sobe para ${fmtKg(kg + passo)}.` };
   }
+  // RIR (repetições que ainda sobravam): dentro da faixa, mas leve demais em todas as séries
+  const comRir = naCarga.filter((s) => s.rir != null);
+  if (kg > 0 && comRir.length === naCarga.length && comRir.every((s) => s.rir >= 4 && s.reps >= min)) {
+    return { kg: kg + passo, ultima: ult, motivo: `Sobraram 4 ou mais repetições em todas as séries: sobe para ${fmtKg(kg + passo)}.` };
+  }
   if (kg > 0 && naCarga[0].reps < min) {
     const menos = Math.max(0, kg - passo);
     return { kg: menos, ultima: ult, motivo: `Ficou abaixo de ${min} repetições: desce para ${fmtKg(menos)}.` };
@@ -199,11 +204,15 @@ export function proximoDia() {
 }
 
 // ---------- sessão ----------
+// Ganchos do personal (personal.js), sem import circular: deload ajusta séries e carga da semana de recuperação
+export const GANCHOS = { deload: null };
 function exDaSessao(exId, nSeries, min, max) {
   const sug = sugerir(exId, min, max);
+  let n = nSeries, kg = sug.kg ?? "";
+  if (GANCHOS.deload) ({ nSeries: n, kg } = GANCHOS.deload(nSeries, kg, exercicio(exId).passo || 2.5));
   return {
     ex: exId, nome: nomeEx(exId), min, max,
-    series: Array.from({ length: nSeries }, () => ({ kg: sug.kg ?? "", reps: "", ok: false })),
+    series: Array.from({ length: n }, () => ({ kg, reps: "", rir: "", ok: false })),
   };
 }
 
@@ -228,7 +237,10 @@ export function concluir() {
   const t = T(), a = t.atual;
   if (!a) return null;
   const ex = a.ex
-    .map((x) => ({ ex: x.ex, nome: x.nome, min: x.min, max: x.max, series: feitas(x.series).map((s) => ({ kg: Number(s.kg) || 0, reps: Number(s.reps), ok: true })) }))
+    .map((x) => ({
+      ex: x.ex, nome: x.nome, min: x.min, max: x.max,
+      series: feitas(x.series).map((s) => ({ kg: Number(s.kg) || 0, reps: Number(s.reps), ...(s.rir === "" || s.rir == null ? {} : { rir: Number(s.rir) }), ok: true })),
+    }))
     .filter((x) => x.series.length);
   t.atual = null;
   if (!ex.length) { salvar(); return null; }

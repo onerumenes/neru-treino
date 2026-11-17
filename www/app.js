@@ -1,19 +1,29 @@
-// Interface do Neru Calorias: diário, conversa com a IA, progresso e ajustes.
+// Interface do Neru Calorias: diário, conversa com a IA e ajustes. A aba Equipe fica em tela-equipe.js.
 
 import {
   S, REFEICOES, nomeRef, carregar, salvar, gravar, hoje, somaDias, paraData, diaDe, totais,
   addItem, acharItem, editarItem, removerItem, reporItem, addFav, removerFav, kcalFav, pesos,
-  novoId, exportar, importar,
+  novoId, exportar, importar, porcao,
 } from "./store.js";
-import { calcMetas, ATIVIDADE, RITMOS } from "./metas.js";
-import { conversar, transcrever, testarChave } from "./ia.js";
+import { camposItem, lerItem } from "./tabela.js";
+import { ATIVIDADE, RITMOS } from "./metas.js";
+import { aplicarMetas } from "./nutri.js";
+import { conversar, transcrever, testarChave, temIA, ultimaRota } from "./ia.js";
+import { secaoIALocal } from "./tela-ia-ajustes.js";
 
 import {
   $, esc, int, dec, lerNum, dataCurta, ui, TELAS, ACOES, FORMS, FOLHAS, MUDANCAS, ICONE,
   irParaDia, render, avisar, abrirFolha, fecharFolha,
 } from "./base.js";
-import { telaTreino, secaoCargas } from "./tela-treino.js";
-import { secaoSuplementosDia, secaoSuplementosAjustes, secaoSono, secaoExportar } from "./extras.js";
+import { telaTreino } from "./tela-treino.js";
+import { secaoSuplementosDia, secaoSuplementosAjustes, secaoExportar } from "./extras.js";
+import { telaEquipe } from "./tela-equipe.js";
+import { cartaoNutri } from "./tela-nutri.js";
+import "./tela-plano.js";
+import "./tela-relatorio.js";
+import "./equipe-ia.js";
+import { iniciarEquipe } from "./equipe.js";
+import { agendarLembretes, ouvirLembretes } from "./lembretes.js";
 import { iniciarAtualizador, nativo, salvarArquivo } from "./nativo.js";
 
 const BUILD = window.NERU_BUILD || { versao: "dev", atualizacoes: "" };
@@ -67,7 +77,7 @@ function telaHoje() {
       </section>`;
   }).join("");
 
-  return `${resumo}
+  return `${resumo}${cartaoNutri(d)}
     <div class="comanda">
       ${itens.length ? `<p class="colunas" aria-hidden="true"><span>kcal</span><span>prot.</span></p>` : ""}
       ${refs}
@@ -76,8 +86,9 @@ function telaHoje() {
 }
 
 function linhaItem(i) {
+  const q = porcao(i);
   return `<li><button data-acao="editar" data-id="${esc(i.id)}">
-    <span class="oque">${esc(i.nome)}${i.qtd ? ` <small>${esc(i.qtd)}</small>` : ""}</span>
+    <span class="oque">${esc(i.nome)}${q ? ` <small>${esc(q)}</small>` : ""}</span>
     <span class="pts"></span>
     <span class="kc">${int(i.kcal)}</span>
     <span class="pr">${int(i.protein)} g</span>
@@ -87,26 +98,6 @@ function linhaItem(i) {
 // ---------- folha (adicionar e editar) ----------
 FOLHAS.add = (f) => folhaAdd(f.ref);
 FOLHAS.editar = (f) => folhaEditar(f.id);
-
-function camposItem(i = {}) {
-  const numeros = [["kcal", "Calorias", ""], ["protein", "Proteína", "g"], ["carbs", "Carbo", "g"], ["fat", "Gordura", "g"]];
-  return `
-    <label class="campo"><span>Alimento</span>
-      <input name="nome" required maxlength="80" value="${esc(i.nome || "")}" placeholder="Arroz branco cozido" autocomplete="off"></label>
-    <label class="campo"><span>Quantidade</span>
-      <input name="qtd" maxlength="40" value="${esc(i.qtd || "")}" placeholder="150 g, 2 colheres, 1 unidade" autocomplete="off"></label>
-    <div class="grade4">
-      ${numeros.map(([n, rot, un]) => `<label class="campo"><span>${rot}${un ? ` <small>${un}</small>` : ""}</span>
-        <input name="${n}" type="number" inputmode="decimal" min="0" step="0.1" ${n === "kcal" ? "required" : ""} value="${i[n] ?? ""}"></label>`).join("")}
-    </div>`;
-}
-function lerItem(form) {
-  const f = new FormData(form);
-  return {
-    ref: f.get("ref") || ui.folha?.ref, nome: f.get("nome"), qtd: f.get("qtd"),
-    kcal: lerNum(f.get("kcal")), protein: lerNum(f.get("protein")), carbs: lerNum(f.get("carbs")), fat: lerNum(f.get("fat")),
-  };
-}
 
 function folhaAdd(ref) {
   const d = ui.data, nome = nomeRef(ref);
@@ -139,8 +130,8 @@ function folhaAdd(ref) {
     <h2 id="folha-titulo">Adicionar em ${nome}</h2>
     ${favs}${repetir}
     <form class="bloco" data-form="novo-item">
-      <h3>Digitar um alimento</h3>
-      ${camposItem()}
+      <h3>Buscar ou digitar um alimento</h3>
+      ${camposItem({}, true)}
       <button class="botao cheio">Adicionar</button>
     </form>
     ${guardar}
@@ -166,11 +157,11 @@ function folhaEditar(id) {
 
 // ---------- IA ----------
 function telaIA() {
-  if (!S.cfg.chave) {
+  if (!temIA("registro")) {
     return `
       <div class="sem-chave">
         <h2>Registrar falando, escrevendo ou fotografando</h2>
-        <p>A IA estima calorias e proteína do que comes e lança no diário. Para isso o app usa a tua conta da OpenAI: cola a chave em Ajustes. Ela fica guardada só neste aparelho.</p>
+        <p>A IA estima calorias e proteína do que comes e lança no diário. Ela pode rodar no próprio celular (Ajustes > IA no celular, no app Android) ou usar a tua conta da OpenAI (cola a chave em Ajustes; fica só neste aparelho).</p>
         <button class="botao" data-acao="aba" data-aba="ajustes">Abrir Ajustes</button>
       </div>`;
   }
@@ -195,14 +186,14 @@ function msgHtml(m) {
   }
   const f = m.feito, linhas = [];
   if (f) {
-    for (const a of f.add) linhas.push(`<li><span class="oque">${esc(a.nome)}${a.qtd ? ` <small>${esc(a.qtd)}</small>` : ""}</span><span class="pts"></span><b>${int(a.kcal)} kcal</b></li>`);
+    for (const a of f.add) linhas.push(`<li><span class="oque">${esc(a.nome)}${porcao(a) ? ` <small>${esc(porcao(a))}</small>` : ""}</span><span class="pts"></span><b>${int(a.kcal)} kcal</b></li>`);
     for (const u of f.upd) linhas.push(`<li><span class="oque">Corrigido: ${esc(u.nome)}</span></li>`);
     for (const r of f.rem) linhas.push(`<li><span class="oque">Apagado: ${esc(r.nome)}</span></li>`);
   }
   const acoes = !linhas.length ? "" : m.desfeito
     ? `<p class="nota">Desfeito</p>`
     : `<button class="link" data-acao="desfazer-msg" data-id="${esc(m.id)}">Desfazer</button>`;
-  return `<li class="ia"><p>${esc(m.texto)}</p>${linhas.length ? `<ul class="feito ${m.desfeito ? "desfeito" : ""}">${linhas.join("")}</ul>` : ""}${acoes}</li>`;
+  return `<li class="ia"><p>${esc(m.texto)}</p>${m.via === "local" ? `<small class="via">IA do celular</small>` : ""}${linhas.length ? `<ul class="feito ${m.desfeito ? "desfeito" : ""}">${linhas.join("")}</ul>` : ""}${acoes}</li>`;
 }
 
 function msgsHtml() {
@@ -236,15 +227,18 @@ function atualizarChat() {
 function aplicarIA(res, d) {
   const feito = { add: [], upd: [], rem: [] };
   for (const a of res.add) {
-    const it = addItem(d, { ref: a.meal, nome: a.name, qtd: a.qty, kcal: a.kcal, protein: a.protein, carbs: a.carbs, fat: a.fat });
-    feito.add.push({ id: it.id, nome: it.nome, qtd: it.qtd, kcal: it.kcal });
+    const it = addItem(d, { ref: a.meal, nome: a.name, qtd: a.qty, g: a.grams, kcal: a.kcal, protein: a.protein, carbs: a.carbs, fat: a.fat });
+    feito.add.push({ id: it.id, nome: it.nome, qtd: it.qtd, g: it.g, kcal: it.kcal });
   }
   for (const u of res.update) {
     const c = {};
     if (u.meal != null) c.ref = u.meal;
     if (u.name != null) c.nome = u.name;
     if (u.qty != null) c.qtd = u.qty;
+    if (u.grams != null) c.g = u.grams;
     for (const k of ["kcal", "protein", "carbs", "fat"]) if (u[k] != null) c[k] = u[k];
+    // trocou o alimento ou os valores: a base por 100 g antiga deixa de valer (na edição ela sai das gramas)
+    if (["nome", "kcal", "protein", "carbs", "fat"].some((k) => k in c)) c.b = null;
     const antes = editarItem(d, String(u.id), c);
     if (antes) feito.upd.push({ antes, nome: acharItem(d, antes.id).nome });
   }
@@ -266,7 +260,7 @@ async function enviar({ texto, imagem, mini }, repetir = false) {
   try {
     const res = await conversar({ texto, imagem, d, historico: S.chat.slice(0, -1) });
     const feito = aplicarIA(res, d);
-    S.chat.push({ id: novoId("m"), de: "ia", texto: res.reply || (feito ? "Registrado." : "Não entendi. Pode dizer de outro jeito?"), d, feito, h: Date.now() });
+    S.chat.push({ id: novoId("m"), de: "ia", texto: res.reply || (feito ? "Registrado." : "Não entendi. Pode dizer de outro jeito?"), d, feito, h: Date.now(), via: ultimaRota });
     ui.ultimo = null;
   } catch (e) {
     ui.erroChat = { texto: e.message || "Algo deu errado.", tipo: e.tipo };
@@ -312,6 +306,7 @@ function marcarMic() {
 async function alternarGravacao() {
   if (ui.gravando) return ui.gravando.stop();
   if (ui.ocupado) return;
+  if (!S.cfg.chave) return avisar("O áudio usa a transcrição da OpenAI: cola a chave em Ajustes, ou escreve a mensagem.");
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return avisar("Este navegador não grava áudio.");
   let fluxo;
   try { fluxo = await navigator.mediaDevices.getUserMedia({ audio: true }); }
@@ -342,72 +337,6 @@ async function alternarGravacao() {
   marcarMic();
 }
 
-// ---------- progresso ----------
-function grafico(ps) {
-  const L = 320, A = 96, m = 8;
-  const kgs = ps.map((p) => p.kg), min = Math.min(...kgs), max = Math.max(...kgs), faixa = max - min || 1;
-  const x = (i) => (ps.length === 1 ? L / 2 : m + (i * (L - 2 * m)) / (ps.length - 1));
-  const y = (kg) => m + (1 - (kg - min) / faixa) * (A - 2 * m);
-  const pontos = ps.map((p, i) => `${x(i).toFixed(1)},${y(p.kg).toFixed(1)}`).join(" ");
-  const fim = ps.length - 1;
-  return `<svg class="grafico" viewBox="0 0 ${L} ${A}" role="img" aria-label="Peso de ${dec(ps[0].kg)} kg a ${dec(ps[fim].kg)} kg em ${ps.length} registros">
-    ${ps.length > 1 ? `<polyline points="${pontos}"/>` : ""}
-    <circle cx="${x(fim).toFixed(1)}" cy="${y(ps[fim].kg).toFixed(1)}" r="4.5"/>
-  </svg>`;
-}
-
-function telaProgresso() {
-  const h = hoje(), ps = pesos().slice(-30), m = S.metas;
-  let blocoPeso = `<p class="vazio">Registra teu peso de vez em quando para ver a curva aqui.</p>`;
-  if (ps.length) {
-    const a = ps[0], z = ps[ps.length - 1], delta = z.kg - a.kg;
-    const desde = dataCurta(a.d);
-    blocoPeso = `
-      <p class="peso-atual"><span>${dec(z.kg)}</span><em>kg</em></p>
-      ${ps.length > 1 ? `<p class="legenda"><span>${delta > 0 ? "+" : delta < 0 ? "−" : ""}${dec(Math.abs(delta))} kg desde ${desde}</span></p>` : ""}
-      ${ps.length > 1 ? grafico(ps) : `<p class="vazio">A curva aparece a partir do segundo registro.</p>`}`;
-  }
-
-  const dias = [];
-  for (let n = 6; n >= 0; n--) { const d = somaDias(h, -n); dias.push({ d, t: totais(d) }); }
-  const comRegistro = dias.filter((x) => x.t.kcal > 0);
-  const escala = Math.max(m?.kcal || 0, ...dias.map((x) => x.t.kcal)) || 1;
-  const media = comRegistro.length ? {
-    kcal: comRegistro.reduce((s, x) => s + x.t.kcal, 0) / comRegistro.length,
-    protein: comRegistro.reduce((s, x) => s + x.t.protein, 0) / comRegistro.length,
-  } : null;
-
-  return `
-    <section class="secao">
-      <h2>Peso</h2>
-      ${blocoPeso}
-      <form class="par" data-form="peso">
-        <input name="kg" type="number" inputmode="decimal" min="20" max="400" step="0.1" required placeholder="Peso de hoje em kg" value="${S.dias[h]?.peso || ""}" aria-label="Peso de hoje em kg">
-        <button class="botao">Registrar peso</button>
-      </form>
-    </section>
-    <section class="secao">
-      <h2>Últimos 7 dias</h2>
-      <ul class="semana">
-        ${dias.map(({ d, t }) => {
-          const dt = paraData(d), passou = m && t.kcal > m.kcal;
-          const rot = d === h ? "hoje" : dt.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
-          return `<li>
-            <button data-acao="ver-dia" data-d="${d}" aria-label="Abrir ${rot}, dia ${dt.getDate()}">
-              <span class="quando">${rot} <small>${dt.getDate()}</small></span>
-              <span class="barra ${passou ? "passou" : ""}"><i style="width:${((t.kcal / escala) * 100).toFixed(1)}%"></i>${m ? `<b class="marca" style="left:${((m.kcal / escala) * 100).toFixed(1)}%"></b>` : ""}</span>
-              <span class="kc">${t.kcal ? int(t.kcal) : "–"}</span>
-              <span class="pr">${t.kcal ? int(t.protein) + " g" : ""}</span>
-            </button></li>`;
-        }).join("")}
-      </ul>
-      ${media ? `<p class="legenda"><span>Média dos dias com registro: <b>${int(media.kcal)}</b> kcal e <b>${int(media.protein)}</b> g de proteína</span></p>` : `<p class="vazio">Nada registrado nesta semana ainda.</p>`}
-    </section>
-    ${secaoCargas()}
-    ${secaoSono()}
-    ${secaoExportar()}`;
-}
-
 // ---------- ajustes ----------
 function explicarMetas(m, u) {
   if (S.metasManuais) return "Metas definidas por ti.";
@@ -418,6 +347,7 @@ function explicarMetas(m, u) {
   else if (u.objetivo === "ganhar") t += `, mais ${int(m.ajuste)} para ganhar cerca de ${Number(u.ritmo).toLocaleString("pt-BR")} kg por semana.`;
   else t += ", sem ajuste, para manter o peso.";
   if (m.noPiso) t += ` A conta deu abaixo de ${int(m.kcal)} kcal, então a meta ficou nesse piso de segurança. Escolhe um ritmo mais leve.`;
+  if (m.ajusteNutri) t += ` Os check-ins semanais ajustaram ${m.ajusteNutri > 0 ? "+" : "−"}${int(Math.abs(m.ajusteNutri))} kcal pelo teu ritmo real.`;
   return t;
 }
 
@@ -465,6 +395,8 @@ function telaAjustes() {
 
     ${secaoSuplementosAjustes()}
 
+    ${secaoIALocal()}
+
     <section class="secao">
       <h2>IA da OpenAI</h2>
       <p class="texto">O registro por texto, foto e áudio usa a tua conta da OpenAI, cobrada por uso. Cria uma chave em <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a> e cola aqui. Ela fica só neste aparelho e não entra no backup.</p>
@@ -484,9 +416,11 @@ function telaAjustes() {
       </form>
     </section>
 
+    ${secaoExportar()}
+
     <section class="secao">
       <h2>Teus dados</h2>
-      <p class="texto">Tudo fica guardado só neste aparelho. Se limpares os dados do app ou trocares de celular, o diário vai junto, então guarda um backup de vez em quando. Ele leva diário, treinos, favoritos e metas.</p>
+      <p class="texto">Tudo fica guardado só neste aparelho. Se limpares os dados do app ou trocares de celular, o diário vai junto, então guarda um backup de vez em quando. Ele leva diário, treinos, favoritos, medidas e metas. As fotos do físico não entram: ficam só neste aparelho.</p>
       <div class="par botoes">
         <button class="botao fraco" data-acao="backup">Baixar backup</button>
         <button class="botao fraco" data-acao="escolher-backup">Restaurar backup</button>
@@ -609,7 +543,7 @@ Object.assign(FORMS, {
       S.user.peso = kg;
       if (!S.metasManuais) {
         const antes = S.metas?.kcal;
-        S.metas = calcMetas(S.user);
+        aplicarMetas();
         if (antes && S.metas && antes !== S.metas.kcal) extra = `. Meta ajustada para ${int(S.metas.kcal)} kcal`;
       }
     }
@@ -618,13 +552,15 @@ Object.assign(FORMS, {
   },
   perfil(form) {
     const f = new FormData(form), primeiraVez = !S.metas;
+    // mudou o objetivo: os ajustes dos check-ins eram para o objetivo antigo
+    if (S.user && S.user.objetivo !== (f.get("objetivo") || "manter")) S.nutri.ajuste = 0;
     S.user = {
       sexo: f.get("sexo") === "f" ? "f" : "m",
       idade: Math.round(lerNum(f.get("idade"))), altura: Math.round(lerNum(f.get("altura"))),
       peso: Math.round(lerNum(f.get("peso")) * 10) / 10,
       atividade: f.get("atividade"), objetivo: f.get("objetivo") || "manter", ritmo: lerNum(f.get("ritmo")) || 0.5,
     };
-    if (!S.metasManuais || !S.metas) { S.metas = calcMetas(S.user); S.metasManuais = false; }
+    if (!S.metasManuais || !S.metas) { S.metasManuais = false; aplicarMetas(); }
     diaDe(hoje(), true).peso = S.user.peso;
     salvar();
     if (primeiraVez && S.metas) { ui.aba = "hoje"; window.scrollTo(0, 0); }
@@ -657,7 +593,7 @@ MUDANCAS.push((el) => {
   if (el.name === "objetivo") { $("#campo-ritmo").hidden = el.value === "manter"; return true; }
   if (el.id === "manuais") {
     S.metasManuais = el.checked;
-    if (!el.checked && S.user) S.metas = calcMetas(S.user);
+    if (!el.checked && S.user) aplicarMetas();
     salvar(); render();
     return true;
   }
@@ -692,21 +628,30 @@ document.addEventListener("keydown", (e) => {
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") return gravar();
-  // Virou o dia com o app aberto: acompanha o novo "hoje"
-  if (ui.seguindoHoje && ui.data !== hoje()) irParaDia(hoje());
+  // Virou o dia com o app aberto: acompanha o novo "hoje" (e a equipe revisa metas temporárias e o relatório)
+  if (ui.seguindoHoje && ui.data !== hoje()) { iniciarEquipe(); irParaDia(hoje()); }
 });
 
 // ---------- início ----------
 TELAS.hoje = { comData: true, html: telaHoje };
 TELAS.ia = { comData: true, html: telaIA, depois: fimDoChat, manterRolagem: true };
 TELAS.treino = telaTreino;
-TELAS.progresso = { titulo: "Progresso", html: telaProgresso };
+TELAS.equipe = telaEquipe;
 TELAS.ajustes = { titulo: "Ajustes", html: telaAjustes };
 
 await carregar();
+iniciarEquipe();
 if (!S.user) ui.aba = "ajustes";
 render();
 iniciarAtualizador(BUILD);
+// lembretes: reagenda com os horários atuais e abre a tela certa ao tocar
+ouvirLembretes((x) => {
+  ui.aba = x.aba; if (x.sub) ui.equipe = x.sub;
+  if (x.aba === "hoje") irParaDia(hoje());
+  render();
+  if (x.acao === "checkin") ACOES["abrir-checkin"]();
+});
+if (S.cfg.lembretes.ativo) agendarLembretes().catch(() => { /* sem permissão: segue sem lembretes */ });
 
 if (!nativo && "serviceWorker" in navigator && location.protocol.startsWith("http")) {
   navigator.serviceWorker.register("sw.js").catch(() => { /* sem modo offline, o app segue funcionando */ });

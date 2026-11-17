@@ -1,0 +1,12 @@
+{
+  "name": "neru-ia-local",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Plugin Capacitor do Neru Calorias: roda um modelo Gemma no próprio celular com o LiteRT-LM do Google.",
+  "license": "UNLICENSED",
+  "capacitor": {
+    "android": {
+      "src": "android"
+    }
+  }
+}
