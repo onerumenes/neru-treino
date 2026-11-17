@@ -1,5 +1,5 @@
 {
-  "apk": 1,
+  "apk": 2,
   "apk_min": 1,
   "_ajuda": "apk: número da versão do APK; aumenta quando quiser gerar um APK novo. apk_min: o APK mais antigo que roda o código atual; aumenta junto com apk só quando adicionar plugin nativo (aí os celulares com APK velho são avisados para baixar o novo em vez de receber a atualização automática)."
 }

@@ -22,7 +22,7 @@ atualiza sozinho. Os dados ficam só no aparelho.
 
 ## Primeira vez (uns 15 minutos)
 
-1. **Cria o repositório.** No GitHub, cria um repositório **público** chamado `neru-calorias` e envia
+1. **Cria o repositório.** No GitHub, cria um repositório **público** chamado `neru-treino` e envia
    todo o conteúdo desta pasta para a branch `main`. A pasta `chave-android` **não** vai junto.
 2. **Liga o GitHub Pages.** Settings > Pages > Source: **GitHub Actions**.
 3. **Cadastra a chave do APK.** Settings > Secrets and variables > Actions. Cria os 4 segredos que estão
@@ -30,11 +30,11 @@ atualiza sozinho. Os dados ficam só no aparelho.
 4. **Publica.** Na aba Actions, roda **Publicar atualização** e depois **Gerar APK** (botão "Run workflow").
    O APK leva uns 5 minutos.
 5. **Instala no celular.** Abre no Chrome do celular:
-   `https://github.com/SEU_USUARIO/neru-calorias/releases/latest/download/neru-calorias.apk`
+   `https://github.com/SEU_USUARIO/neru-treino/releases/latest/download/neru-calorias.apk`
    e instala (o Android pede para permitir instalar apps desta fonte).
 6. **Cola a chave da OpenAI** em Ajustes > IA da OpenAI e toca em "Salvar e testar".
 
-A versão web fica em `https://SEU_USUARIO.github.io/neru-calorias/` e também pode ser instalada pelo
+A versão web fica em `https://SEU_USUARIO.github.io/neru-treino/` e também pode ser instalada pelo
 Chrome ("Adicionar à tela inicial"), mas os dados do app Android e os do navegador são separados.
 
 ## Dia a dia: mudar o app
