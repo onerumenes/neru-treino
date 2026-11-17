@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#241A22">
+<meta name="description" content="Diário de calorias, proteína e treino com registro por texto, foto e áudio.">
+<title>Neru Calorias</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preload" href="fonte.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<button id="atualizacao" hidden></button>
+<header id="topo"></header>
+<main id="tela"></main>
+
+<nav id="abas" aria-label="Seções">
+  <button data-acao="aba" data-aba="hoje">Diário</button>
+  <button data-acao="aba" data-aba="ia">IA</button>
+  <button data-acao="aba" data-aba="treino" data-treino="inicio">Treino</button>
+  <button data-acao="aba" data-aba="progresso">Progresso</button>
+  <button data-acao="aba" data-aba="ajustes">Ajustes</button>
+</nav>
+
+<div id="folha" hidden>
+  <div class="fundo" data-acao="fechar-folha"></div>
+  <div class="painel" role="dialog" aria-modal="true" aria-labelledby="folha-titulo">
+    <button class="fechar" data-acao="fechar-folha" aria-label="Fechar">×</button>
+    <div id="folha-corpo"></div>
+  </div>
+</div>
+
+<div id="aviso" role="status" aria-live="polite"></div>
+
+<noscript><p style="padding:24px">O Neru Calorias precisa de JavaScript para funcionar.</p></noscript>
+<script src="version.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

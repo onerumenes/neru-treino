@@ -1,0 +1,20 @@
+{
+  "name": "neru-calorias",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Diário de calorias, proteína e treino. App web + Android (Capacitor).",
+  "scripts": {
+    "build": "python3 tools/build.py",
+    "android": "python3 tools/build.py && npx cap sync android && python3 tools/preparar_android.py"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.6.2",
+    "@capacitor/core": "8.6.2",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/share": "8.0.3",
+    "@capawesome/capacitor-live-update": "8.8.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.2"
+  }
+}

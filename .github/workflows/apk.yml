@@ -1,0 +1,75 @@
+# Compila o APK assinado e publica como Release (link fixo: releases/latest/download/neru-calorias.apk).
+# Roda quando neru.config.json muda (aumentaste "apk") ou à mão, na aba Actions.
+name: Gerar APK
+
+on:
+  push:
+    branches: [main]
+    paths: ["neru.config.json", "package.json", "capacitor.config.json", "android-recursos/**", "tools/preparar_android.py"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Conferir a chave de assinatura
+        env:
+          KS: ${{ secrets.NERU_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KS" ]; then
+            echo "::error::Falta o segredo NERU_KEYSTORE_B64. Veja a seção 'Chave do APK' no README."
+            exit 1
+          fi
+          echo "$KS" | base64 -d > "$RUNNER_TEMP/neru.jks"
+
+      - name: Gerar código e projeto Android
+        run: |
+          npm install --no-audit --no-fund
+          python3 tools/build.py
+          npx cap add android
+          python3 tools/preparar_android.py
+
+      - name: Compilar
+        working-directory: android
+        env:
+          NERU_KEYSTORE: ${{ runner.temp }}/neru.jks
+          NERU_KEYSTORE_SENHA: ${{ secrets.NERU_KEYSTORE_SENHA }}
+          NERU_KEY_ALIAS: ${{ secrets.NERU_KEY_ALIAS }}
+          NERU_KEY_SENHA: ${{ secrets.NERU_KEY_SENHA }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/neru-calorias.apk"
+
+      - name: Publicar Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CODIGO=$(python3 -c "import json; print(json.load(open('neru.config.json'))['apk'])")
+          TAG="apk-$CODIGO"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" neru-calorias.apk --clobber
+          else
+            gh release create "$TAG" neru-calorias.apk --latest --title "Neru Calorias, APK $CODIGO" \
+              --notes "Instala por cima do anterior. As próximas mudanças de código chegam sozinhas pelo app."
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neru-calorias-apk
+          path: neru-calorias.apk

@@ -1,0 +1,16 @@
+{
+  "appId": "app.neru.calorias",
+  "appName": "Neru Calorias",
+  "webDir": "dist/app",
+  "android": {
+    "backgroundColor": "#241A22"
+  },
+  "plugins": {
+    "LiveUpdate": {
+      "readyTimeout": 10000,
+      "autoDeleteBundles": true,
+      "autoBlockRolledBackBundles": true,
+      "autoUpdateStrategy": "none"
+    }
+  }
+}
