@@ -3,8 +3,9 @@
 
 import { S, hoje, somaDias, totais, salvar, paraData } from "./store.js";
 import { T, exercicio, proximoDia } from "./treino.js";
-import { ritmoPeso, adesao, gastoReal, mudarMetaKcal, aplicarMetas, FONTES, pisoKcal } from "./nutri.js";
-import { blocoAtual, recordes, estagnados, volumeFeito, faixaVolume, e1rm } from "./personal.js";
+import { ritmoPeso, adesao, gastoReal, mudarMetaKcal, aplicarMetas, FONTES, pisoKcal, ritmoEfetivo } from "./nutri.js";
+import { blocoAtual, semanaLeve, emRecuperacao, recordes, estagnados, melhorDa } from "./personal.js";
+import { volumeFeito, faixaVolume } from "./musculos.js";
 import { GRUPOS } from "./treino.js";
 import { ehPerna, cardioDoDiaPlano, resumoCardio, reduzirCardio, planoCardio } from "./cardio.js";
 
@@ -17,7 +18,7 @@ const num = (x) => (Math.round(x * 10) / 10).toLocaleString("pt-BR");
 export function tendenciaForca(ate = hoje()) {
   const meio = somaDias(ate, -14), ini = somaDias(ate, -28), rec = new Map(), ant = new Map();
   for (const s of T().sessoes) for (const x of s.ex) {
-    const m = x.series.reduce((mx, y) => Math.max(mx, e1rm(y.kg, y.reps)), 0);
+    const m = melhorDa(x.series);
     if (!m) continue;
     if (s.d > meio && s.d <= ate) rec.set(x.ex, Math.max(rec.get(x.ex) || 0, m));
     else if (s.d > ini && s.d <= meio) ant.set(x.ex, Math.max(ant.get(x.ex) || 0, m));
@@ -111,18 +112,18 @@ export function avisos(d = hoje()) {
       acao: { rotulo: `+${delta} kcal por 2 semanas`, tipo: "temporario", delta, dias: 14 },
     });
   }
-  if (u.objetivo === "ganhar" && ritmo != null && ritmo > Math.max(0.5, Number(u.ritmo || 0.25) * 1.5)) {
+  if (u.objetivo === "ganhar" && ritmo != null && ritmo > Math.max(0.5, ritmoEfetivo(u) * 1.5)) {
     out.push({
       id: `bulk-${d.slice(0, 7)}`, quem: "Nutri e personal", titulo: "Ganho rápido demais",
-      texto: `O peso está subindo ${num(ritmo)} kg por semana, mais que o plano (${num(Number(u.ritmo || 0.25))}). Acima disso, boa parte vira gordura: o nutri tira 100 kcal do superávit e o personal mantém o volume de treino.`,
+      texto: `O peso está subindo ${num(ritmo)} kg por semana, mais que o plano (${num(ritmoEfetivo(u))}). Acima disso, boa parte vira gordura: o nutri tira 100 kcal do superávit e o personal mantém o volume de treino.`,
       acao: { rotulo: "Tirar 100 kcal", tipo: "meta", delta: -100 },
     });
   }
-  const b = blocoAtual(d);
-  if (b?.deload && u.objetivo === "perder" && !temp) {
+  const b = blocoAtual(d), leve = semanaLeve(d);
+  if (emRecuperacao(d) && u.objetivo === "perder" && !temp) {
     const delta = clamp(r10(gasto.ok ? gasto.tdee - m.kcal : Math.abs(m.ajuste || 300)), 100, 500);
     out.push({
-      id: `deload-${b.ini}`, quem: "Personal e nutri", titulo: "Semana de recuperação",
+      id: `deload-${leve?.ini || b?.ini}`, quem: "Personal e nutri", titulo: "Semana de recuperação",
       texto: `O treino está na semana de recuperação. Se quiseres, o nutri sobe a meta para perto da manutenção nesta semana (+${delta} kcal): o corpo recupera melhor e na semana seguinte o déficit volta.`,
       acao: { rotulo: `+${delta} kcal por 7 dias`, tipo: "temporario", delta, dias: 7 },
     });
@@ -181,7 +182,7 @@ export function gerarRelatorio(ate = hoje()) {
   const sessoes = T().sessoes.filter((s) => s.d > somaDias(ate, -7) && s.d <= ate);
   const rec = recordes(ate), est = estagnados(), vol = volumeFeito(ate), forca = tendenciaForca(ate);
   const baixos = Object.entries(vol).filter(([g, v]) => v < faixaVolume(g)[0]).map(([g]) => GRUPOS[g]);
-  const alvo = u.objetivo === "perder" ? -Number(u.ritmo || 0.5) : u.objetivo === "ganhar" ? Number(u.ritmo || 0.25) : 0;
+  const alvo = u.objetivo === "perder" ? -ritmoEfetivo(u) : u.objetivo === "ganhar" ? ritmoEfetivo(u) : 0;
   const linhas = [];
   linhas.push(ad.registrados
     ? `Comida: ${ad.registrados} de 7 dias registrados, ${ad.naMeta} perto da meta, média de ${ad.kcalMedia.toLocaleString("pt-BR")} kcal e ${ad.protMedia} g de proteína (meta ${m.kcal.toLocaleString("pt-BR")} kcal e ${m.protein} g).`

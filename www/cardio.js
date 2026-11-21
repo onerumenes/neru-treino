@@ -5,7 +5,7 @@
 
 import { S, salvar, hoje, somaDias, novoId } from "./store.js";
 import { T, exercicio, GANCHOS } from "./treino.js";
-import { blocoAtual, ehComposto } from "./personal.js";
+import { emRecuperacao, ehComposto } from "./personal.js";
 
 export const APARELHOS = { esteira: "Esteira", bike: "Bicicleta", eliptico: "Elíptico", outro: "Outro" };
 export const MODOS = { leve: "Leve contínuo", intervalado: "Intervalado" };
@@ -78,7 +78,7 @@ const ultimoDe = (modo) => [...cardios()].reverse().find((c) => c.modo === modo)
 // Progressão do leve: duas sessões seguidas com o tempo completo e esforço leve → +3 min (até 30), depois +0,3 km/h
 function progredir() {
   const p = planoCardio();
-  if (!p || blocoAtual()?.deload) return;
+  if (!p || emRecuperacao()) return;
   const ls = leves();
   if (ls.length - (p.base || 0) < 2) return;
   const [a, b] = ls.slice(-2);
@@ -126,7 +126,7 @@ function prescricaoForte(fase) {
 export function cardioDoDiaPlano(diaId, d = hoje()) {
   const p = planoCardio();
   if (!p) return null;
-  const plano = T().plano, deload = !!blocoAtual(d)?.deload, { fase } = faseCardio(d);
+  const plano = T().plano, deload = emRecuperacao(d), { fase } = faseCardio(d);
   const dia = plano.find((x) => x.id === diaId) || null;
   if (!dia) return prescricaoLeve(false, deload);
   // intervalado no primeiro dia sem perna; leve nos outros, até 3 por semana (2 na recuperação)

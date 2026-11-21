@@ -27,15 +27,20 @@ inventar valores. Por isso o modelo pequeno do celular dá conta.
 
 | Arquivo | O que faz |
 |---|---|
-| `www/nutri.js` | Perfil das refeições, "O que eu como agora?", gasto real (regressão do peso), adesão, check-in |
+| `www/nutri.js` | Perfil das refeições, "O que eu como agora?", gasto (fórmula → estimado pelos treinos → medido), ritmo automático, proteína pela massa magra, ciclo, dica de proteína, check-in |
 | `www/cardapio.js` | Alimentos da TACO que o nutri sugere, por grupo, com porção e unidade caseira |
 | `www/plano-alimentar.js` | Plano alimentar e substituições com as mesmas calorias |
-| `www/personal.js` | Gerador de programa, volume, 1RM estimado, recordes, estagnação, blocos e deload |
+| `www/personal.js` | Gerador de programa, 1RM estimado com RIR, recordes, estagnação, série principal + recuo (foco em força), descanso e semana leve |
 | `www/equipe.js` | Regras entre nutri e personal, metas temporárias e relatório semanal |
-| `www/corpo.js` | Medidas, percentual de gordura e fotos (no IndexedDB, fora do backup) |
+| `www/corpo.js` | Medidas, gordura (fita, dobras de Jackson-Pollock e calibração por exame), dores, saúde e fotos (no IndexedDB, fora do backup) |
 | `www/ia.js`, `www/ia-local.js` | Rotas da IA: celular ou OpenAI conforme a tarefa e os Ajustes |
 | `www/equipe-ia.js` | Os textos que a IA escreve sobre os números (sugestão, check-in, retorno, fotos) |
 | `www/lembretes.js` | Notificações de refeição, pesagem, check-in e treino |
+| `www/tela-perfil.js` | Aba Perfil: ficha do corpo com o avatar, medidas com a fita sobre o corpo e a linha do tempo |
+| `www/tela-avaliacao.js` | Avaliação corporal: dia de avaliação, dobras cutâneas, simetria, mapa de dores e saúde |
+| `www/musculos.js` | Carga por músculo: séries efetivas (perto da falha vale mais, composto conta meia série nos que ajudam), recuperação, força, sinais da semana leve e sugestões de volume |
+| `www/tela-treino-corpo.js` | Treino no corpo: o avatar pintado por estímulo, recuperação ou força |
+| `www/avatar.js` | Avatar anatômico: cada músculo escala pela medida da fita, com a camada de gordura por região |
 | `plugins/ia-local/` | Plugin Android (Java) que roda o modelo `.litertlm` com o LiteRT-LM |
 
 ## Pastas
@@ -46,6 +51,8 @@ inventar valores. Por isso o modelo pequeno do celular dá conta.
 | `plugins/ia-local/` | Plugin nativo da IA no celular (entra no APK). |
 | `tools/build.py` | Carimba a versão e gera `dist/app` (vai no APK) e `dist/site` (vai para o GitHub Pages, com `atualizacoes/latest.json` e o zip). |
 | `tools/taco.py` | Gera `www/alimentos.js` a partir da planilha oficial da TACO. |
+| `tools/corpo_anatomico.mjs` | Gera `www/corpo-anatomico.json` (o desenho do corpo) a partir do react-native-body-highlighter. |
+| `tests/` | Testes das contas (`npm test`, precisa de Node 20+). |
 | `tools/preparar_android.py` | Ajusta o projeto Android gerado pelo Capacitor: versão, microfone, ícones, assinatura. |
 | `android-recursos/` | Ícones, ícone das notificações e tela de abertura do APK. |
 | `neru.config.json` | Número do APK (`apk`) e o APK mínimo para o código atual (`apk_min`). |
@@ -96,6 +103,8 @@ Para testar antes de enviar, roda um servidor local e abre no navegador:
 cd www
 python -m http.server 8000
 ```
+
+As contas têm testes: `npm test`.
 
 ## Quando precisa de APK novo
 
@@ -150,5 +159,19 @@ Para regerar: baixa `Taco_4a_edicao_2011.xls` (site do NEPA ou a pasta `referenc
 No formulário, cada item guarda as gramas (`g`) e a base por 100 g (`b`). Mudar as gramas recalcula os
 nutrientes. Valores digitados à mão (de um rótulo, por exemplo) viram a base assim que as gramas são
 preenchidas.
+
+## Desenho do corpo
+
+`www/corpo-anatomico.json` vem do [react-native-body-highlighter](https://github.com/HichamELBSI/react-native-body-highlighter)
+(licença MIT, ELABBASSI Hicham): corpo masculino e feminino, de frente e de costas, com cada músculo separado.
+O texto da licença aparece em Ajustes > Créditos. Para regerar:
+
+```
+git clone --depth 1 https://github.com/HichamELBSI/react-native-body-highlighter /tmp/rnbh
+npm i --no-save svgpath svg-path-bbox
+node tools/corpo_anatomico.mjs /tmp/rnbh www/corpo-anatomico.json
+```
+
+As medidas que o desenho original representa e o exagero visual ficam em `REF` e `EXAGERO`, no começo de `www/avatar.js`.
 
 Fonte: Bricolage Grotesque, licença SIL OFL 1.1.

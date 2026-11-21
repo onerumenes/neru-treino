@@ -5,7 +5,7 @@ import { S, REFEICOES, nomeRef, hoje, somaDias, salvar, pesos } from "./store.js
 import { esc, int, dec, ui, ACOES, FORMS, FOLHAS, MUDANCAS, render, avisar, abrirFolha, fecharFolha, dataCurta } from "./base.js";
 import { SECOES } from "./tela-equipe.js";
 import { gerarPlano, planoDesatualizado } from "./plano-alimentar.js";
-import { aplicarMetas, adesao, gastoReal, tendencia } from "./nutri.js";
+import { aplicarMetas, adesao, gastoReal, tendencia, ritmoEfetivo } from "./nutri.js";
 import { ultimasMedidas, composicao, sessoesDeFotos } from "./corpo.js";
 
 export const ALERTAS = {
@@ -51,7 +51,7 @@ function passoConsulta(f) {
       <p class="texto">O app não substitui médico nem nutricionista. Se algo abaixo vale para ti, ele fica mais conservador e te lembra de ter acompanhamento profissional.</p>
       <fieldset class="opcoes multi lista-vertical">${opcoesCheck("alertas", ALERTAS, d.alertas)}</fieldset>`;
     default: {
-      const m = S.metas, alvo = Number(d.pesoAlvo) || 0, ritmo = Number(u.ritmo) || 0.5, atual = Number(u.peso) || 0;
+      const m = S.metas, alvo = Number(d.pesoAlvo) || 0, ritmo = ritmoEfetivo(u) || 0.5, atual = Number(u.peso) || 0;
       const semanas = alvo && atual && u.objetivo !== "manter" ? Math.ceil(Math.abs(atual - alvo) / ritmo) : 0;
       return `
         ${m ? `<p class="metas"><b>${int(m.kcal)}</b> kcal e <b>${int(m.protein)}</b> g de proteína por dia</p>` : `<p class="vazio">Preenche o perfil em Ajustes para ter as metas.</p>`}

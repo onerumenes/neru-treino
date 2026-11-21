@@ -1,12 +1,13 @@
 // Telas do personal: avaliação, programa gerado, revisão da semana, blocos e cronômetro de descanso.
 
 import { S, salvar } from "./store.js";
-import { $, esc, ui, ACOES, FORMS, FOLHAS, render, avisar, abrirFolha, fecharFolha } from "./base.js";
+import { $, esc, dataCurta, ui, ACOES, FORMS, FOLHAS, render, avisar, abrirFolha, fecharFolha } from "./base.js";
 import { T, GRUPOS, nomeEx } from "./treino.js";
 import {
-  LESOES, gerarPrograma, aplicarPrograma, volumePlanejado, volumeFeito, faixaVolume, recordes, estagnados,
-  trocarNoPlano, blocoAtual, novoBloco, descansoPara,
+  LESOES, gerarPrograma, aplicarPrograma, recordes, estagnados,
+  trocarNoPlano, blocoAtual, descansoPara, semanaLeve, iniciarSemanaLeve, encerrarSemanaLeve,
 } from "./personal.js";
+import { volumePlanejado, volumeFeito, faixaVolume, descreverFaixas, sinaisSemanaLeve } from "./musculos.js";
 
 const NIVEIS = { iniciante: "Iniciante (menos de 1 ano)", intermediario: "Intermediário (1 a 3 anos)", avancado: "Avançado (3 anos ou mais)" };
 const FOCOS = { hipertrofia: "Hipertrofia", ambos: "Força e hipertrofia", forca: "Força" };
@@ -20,7 +21,7 @@ FOLHAS.avaliacaoTreino = (f) => {
     const vol = volumePlanejado(f.prog.plano);
     return `
       <h2 id="folha-titulo">Teu programa</h2>
-      <p class="texto">${esc(f.prog.divisao)}, em blocos de 5 semanas: 4 de progressão e 1 de recuperação.</p>
+      <p class="texto">${esc(f.prog.divisao)}. A semana leve vem quando o corpo pedir: o personal acompanha recuperação, força, sono e dor.</p>
       ${f.prog.plano.map((d) => `
         <div class="plano-ref"><h3><span>${esc(d.nome)}</span></h3>
           <ul class="lista-ex">${d.ex.map((x) => `<li><span class="oque">${esc(nomeEx(x.ex))}</span><span class="pts"></span><b>${x.series} × ${x.min}–${x.max}</b></li>`).join("")}</ul>
@@ -65,18 +66,28 @@ function tabelaVolume(vol, feito = null) {
   return `<ul class="volume">${grupos.map((g) => {
     const [min, max] = faixaVolume(g), v = feito ? feito[g] || 0 : vol[g];
     const st = v < min ? "baixo" : v > max ? "alto" : "ok";
-    return `<li class="${st}"><span>${GRUPOS[g]}</span><span class="barra"><i style="width:${Math.min(100, (v / (max * 1.2)) * 100).toFixed(0)}%"></i><b class="marca" style="left:${((min / (max * 1.2)) * 100).toFixed(0)}%"></b><b class="marca" style="left:${((max / (max * 1.2)) * 100).toFixed(0)}%"></b></span><b>${v}</b></li>`;
-  }).join("")}</ul><p class="legenda"><span>Faixa boa: ${feito ? "séries feitas nos últimos 7 dias" : "séries por semana"} entre as marcas (10 a 20; 12 a 22 nos prioritários).</span></p>`;
+    return `<li class="${st}"><span>${GRUPOS[g]}</span><span class="barra"><i style="width:${Math.min(100, (v / (max * 1.2)) * 100).toFixed(0)}%"></i><b class="marca" style="left:${((min / (max * 1.2)) * 100).toFixed(0)}%"></b><b class="marca" style="left:${((max / (max * 1.2)) * 100).toFixed(0)}%"></b></span><b>${v.toLocaleString("pt-BR")}</b></li>`;
+  }).join("")}</ul><p class="legenda"><span>Faixa boa: ${feito ? "séries efetivas nos últimos 7 dias" : "séries efetivas por semana"} entre as marcas (${descreverFaixas()}).</span><span>Série perto da falha vale 1, longe dela vale menos (sem RIR anotado conta como 2). Exercício composto conta meia série nos músculos que ajudam.</span></p>`;
 }
 
 // ---------- seção do personal no início do treino ----------
 export function secaoPersonal() {
-  const b = blocoAtual(), av = S.personal.avaliacao;
+  const b = blocoAtual(), av = S.personal.avaliacao, leve = semanaLeve();
   const rec = recordes(), est = estagnados(), feito = volumeFeito();
   const temHistorico = T().sessoes.length > 0;
   let bloco = "";
-  if (b && !b.acabou) bloco = `<p class="bloco-status ${b.deload ? "deload" : ""}">Semana <b>${b.semana}</b> de ${b.semanas}${b.deload ? ": semana de recuperação. Menos séries e 10% menos carga, para o corpo absorver o bloco." : ""}</p>`;
-  else if (b?.acabou) bloco = `<div class="confirma suave"><p>O bloco de ${b.semanas} semanas acabou. Hora de revisar: ${est.length ? `${est.length} exercício${est.length > 1 ? "s" : ""} parado${est.length > 1 ? "s" : ""} para trocar` : "nenhum exercício parado"}.</p><div class="par botoes"><button class="botao" data-acao="novo-bloco">Começar novo bloco</button><button class="botao fraco" data-acao="abrir-avaliacao">Refazer programa</button></div></div>`;
+  // bloco antigo de 5 semanas: quem estava no meio termina ele; depois, a semana leve vem pelos sinais
+  if (b && !b.acabou) bloco = `<p class="bloco-status ${b.deload ? "deload" : ""}">Semana <b>${b.semana}</b> de ${b.semanas} do bloco${b.deload ? ": semana de recuperação. Menos séries e 10% menos carga." : ""}</p>`;
+  else if (leve) bloco = `<div class="bloco-status deload"><p><b>Semana leve até ${dataCurta(leve.fim)}.</b> Menos séries e 10% menos carga, para o corpo se recuperar.</p><button class="link" data-acao="encerrar-semana-leve">Encerrar antes</button></div>`;
+  else if (temHistorico) {
+    const s = sinaisSemanaLeve();
+    bloco = `<div class="sinais-leve ${s.propor ? "propor" : ""}">
+      <div class="titulo-linha"><b>Semana leve</b><small>${s.propor ? "o corpo está pedindo" : `ainda não · ${s.ativos} de ${s.sinais.length} sinais`}</small></div>
+      <div class="sinais">${s.sinais.map((x) => `<span class="${x.ativo ? "on" : ""}" title="${esc(x.detalhe)}"><i></i>${x.nome}</span>`).join("")}</div>
+      ${s.propor ? `<p class="dica">${esc(s.sinais.filter((x) => x.ativo).map((x) => `${x.nome}: ${x.detalhe}`).join(". "))}.</p>
+        <button class="botao cheio" data-acao="iniciar-semana-leve">Fazer a semana leve (7 dias)</button>` : ""}
+    </div>`;
+  }
   return `
     <section class="secao personal">
       <h2>Personal</h2>
@@ -93,8 +104,8 @@ export function secaoPersonal() {
 
 // ---------- cronômetro de descanso ----------
 let relogio = null;
-export function iniciarDescanso(exId) {
-  const seg = descansoPara(exId);
+export function iniciarDescanso(exId, serie = null) {
+  const seg = descansoPara(exId, serie);
   ui.descanso = { fim: Date.now() + seg * 1000, total: seg };
   clearInterval(relogio);
   relogio = setInterval(atualizarDescanso, 500);
@@ -125,9 +136,10 @@ Object.assign(ACOES, {
     const f = ui.folha;
     aplicarPrograma(f.prog);
     fecharFolha(); ui.treino = "inicio"; render(); window.scrollTo(0, 0);
-    avisar("Programa novo. Semana 1 do bloco");
+    avisar("Programa novo");
   },
-  "novo-bloco"() { novoBloco(); render(); avisar("Bloco novo: semana 1"); },
+  "iniciar-semana-leve"() { iniciarSemanaLeve(); render(); avisar("Semana leve: os próximos treinos já vêm reduzidos"); },
+  "encerrar-semana-leve"() { encerrarSemanaLeve(); render(); avisar("Semana leve encerrada"); },
   "trocar-exercicio"(b) {
     trocarNoPlano(b.dataset.de, b.dataset.para);
     render();

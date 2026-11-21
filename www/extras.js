@@ -5,6 +5,7 @@ import { $, esc, int, dec, lerNum, ui, ACOES, FORMS, FOLHAS, render, avisar, abr
 import { resumoSeries } from "./treino.js";
 import { descreverCardio } from "./cardio.js";
 import { podeCompartilhar, compartilhar } from "./nativo.js";
+import { ritmoEfetivo } from "./nutri.js";
 
 // ---------- suplementos ----------
 const tomados = (d) => diaDe(d).supl || [];
@@ -90,7 +91,7 @@ export function gerarTexto(n) {
 
   const u = S.user, m = S.metas;
   if (u) {
-    const obj = { perder: `perder gordura, cerca de ${Number(u.ritmo).toLocaleString("pt-BR")} kg por semana`, manter: "manter o peso", ganhar: `ganhar massa, cerca de ${Number(u.ritmo).toLocaleString("pt-BR")} kg por semana` }[u.objetivo];
+    const obj = { perder: `perder gordura, cerca de ${ritmoEfetivo(u).toLocaleString("pt-BR")} kg por semana`, manter: "manter o peso", ganhar: `ganhar massa, cerca de ${ritmoEfetivo(u).toLocaleString("pt-BR")} kg por semana` }[u.objetivo];
     L.push(`Perfil: ${u.sexo === "f" ? "mulher" : "homem"}, ${u.idade} anos, ${u.altura} cm, ${dec(u.peso)} kg. Objetivo: ${obj}.`);
   }
   if (m) L.push(`Metas por dia: ${int(m.kcal)} kcal e ${int(m.protein)} g de proteína${S.metasManuais ? " (definidas à mão)" : ""}.`);

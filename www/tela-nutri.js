@@ -1,11 +1,19 @@
 // Telas do nutri: cartão do dia no Diário, "O que eu como agora?", check-in semanal e o resumo na aba Equipe.
 
-import { S, REFEICOES, nomeRef, hoje, addItem, removerItem, porcao } from "./store.js";
+import { S, REFEICOES, nomeRef, hoje, somaDias, salvar, addItem, removerItem, porcao } from "./store.js";
 import { esc, int, dec, ui, ACOES, FORMS, FOLHAS, render, avisar, abrirFolha, fecharFolha, dataCurta } from "./base.js";
 import {
   sugerirResto, momentoDoDia, checkinPendente, avaliarSemana, registrarCheckin, gastoReal, perfil, adesao, ritmoPeso,
+  gastoEstimado, ritmoEfetivo,
 } from "./nutri.js";
 import { SECOES } from "./tela-equipe.js";
+import { aplicarTemporario } from "./equipe.js";
+import { forcaPorMusculo, sugestoesVolume, aplicarSugestaoVolume, sinaisSemanaLeve } from "./musculos.js";
+import { iniciarSemanaLeve, semanaLeve } from "./personal.js";
+import { GRUPOS } from "./treino.js";
+import { svgCorpo } from "./avatar.js";
+import { comCorpo, desenhar } from "./tela-perfil.js";
+import { GRUPO_DE } from "./tela-treino-corpo.js";
 
 const lista = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} e ${xs[xs.length - 1]}`);
 const nomesRefs = (refs) => lista(refs.map((r) => nomeRef(r).toLowerCase()));
@@ -18,7 +26,7 @@ export const AVISOS_DIARIO = [];
 export function cartaoNutri(d) {
   const mo = momentoDoDia(d);
   const check = d === hoje() && checkinPendente()
-    ? `<button class="aviso-equipe" data-acao="abrir-checkin"><b>Check-in da semana</b><span>2 minutos para o nutri ajustar teu plano</span></button>` : "";
+    ? `<button class="aviso-equipe" data-acao="abrir-checkin"><b>Check-in da semana</b><span>2 minutos: nutri e personal ajustam comida e treino</span></button>` : "";
   const extras = d === hoje() ? AVISOS_DIARIO.map((fn) => fn(d)).join("") : "";
   if (!mo) return check + extras;
   let texto = "", botao = "";
@@ -82,37 +90,82 @@ FOLHAS.sugestao = (f) => {
 };
 
 // ---------- check-in semanal ----------
+// ---------- check-in da equipe (semanal) ----------
+// Comida, pausa de manutenção, volume por músculo e semana leve decididos juntos; cada decisão com a sua chave.
 const escala = (nome, rotulo, baixo, alto, valor) => `
   <fieldset class="escala"><legend>${rotulo}</legend>
     <div>${[1, 2, 3, 4, 5].map((n) => `<label><input type="radio" name="${nome}" value="${n}" ${valor === n ? "checked" : ""} required><span>${n}</span></label>`).join("")}</div>
     <p><small>${baixo}</small><small>${alto}</small></p>
   </fieldset>`;
 
+// Semana de manutenção: fome alta de novo, ou dieta longa (12 semanas de check-ins em déficit)
+function propostaPausa(r) {
+  const u = S.user, m = S.metas, ge = gastoEstimado();
+  if (u?.objetivo !== "perder" || !m || !ge || S.nutri.temporario || r.fome < 4) return null;
+  const ult = S.nutri.checkins[S.nutri.checkins.length - 1];
+  const longa = S.nutri.checkins.filter((c) => c.d > somaDias(hoje(), -84)).length >= 10;
+  if (!(ult?.fome >= 4) && !longa) return null;
+  const delta = Math.max(100, Math.min(600, Math.round((ge.kcal - m.kcal) / 10) * 10));
+  return { delta, motivo: longa ? "Dieta longa e fome alta: 7 dias no gasto, depois o déficit volta." : "Fome alta há 2 semanas: 7 dias no gasto, depois o déficit volta." };
+}
+
+function avatarDoCheckin(f) {
+  if (!comCorpo() || !f.sugs.length) return "";
+  const muda = {};
+  for (const x of f.sugs) if (f.aceito[`vol:${x.g}:${x.delta}`]) muda[x.g] = x.delta > 0 ? "mais" : "menos";
+  const camada = (s) => muda[GRUPO_DE[s]] || "musculo";
+  const cores = { mais: "#3A78B8", menos: "#E07A2C", musculo: "#5B4853" };
+  return `<div class="checkin-corpo">${["front", "back"].map((v) => svgCorpo(desenhar(v, hoje(), {}, { camada }), { cores, rotulo: `Músculos ${v === "front" ? "de frente" : "de costas"} com mudança de séries` })).join("")}
+    <p class="legenda-cores"><span><i class="ponto-cor" style="background:#3A78B8"></i>Mais séries</span><span><i class="ponto-cor" style="background:#E07A2C"></i>Menos séries</span></p></div>`;
+}
+
+function decisao(f, k, sinal, classe, titulo, porque) {
+  const on = !!f.aceito[k];
+  return `<li class="decisao"><span class="sinal ${classe}">${sinal}</span><span class="texto-sug"><b>${esc(titulo)}</b><small>${esc(porque)}</small></span>
+    <button class="chave ${on ? "on" : ""}" role="switch" aria-checked="${on}" aria-label="${esc(titulo)}" data-acao="alternar-decisao" data-k="${esc(k)}"><i></i></button></li>`;
+}
+function informacao(sinal, titulo, porque) {
+  return `<li class="decisao"><span class="sinal neutro">${sinal}</span><span class="texto-sug"><b>${esc(titulo)}</b><small>${esc(porque)}</small></span></li>`;
+}
+
 FOLHAS.checkin = (f) => {
   if (!f.aval) {
-    const ad = adesao(), r = ritmoPeso();
+    comCorpo(); // já carrega o desenho para o segundo passo
+    const ad = adesao(), r = ritmoPeso(), ge = gastoEstimado(), forca = Object.values(forcaPorMusculo());
+    const sobe = forca.filter((x) => x.tendencia === "subindo").length, cai = forca.filter((x) => x.tendencia === "caindo").length;
+    const alvo = S.user?.objetivo === "perder" ? -ritmoEfetivo() : S.user?.objetivo === "ganhar" ? ritmoEfetivo() : 0;
     return `
       <h2 id="folha-titulo">Check-in da semana</h2>
-      <p class="texto">Nesta semana: ${ad.registrados} dias registrados, ${ad.naMeta} perto da meta de calorias, média de ${int(ad.kcalMedia)} kcal e ${int(ad.protMedia)} g de proteína${r != null ? `. Peso: ${r > 0 ? "+" : ""}${dec(r)} kg por semana` : ""}.</p>
+      <p class="texto">O nutri e o personal olham a semana juntos.</p>
+      <div class="cartoes2 numeros-checkin">
+        <div class="cartao"><span>Peso por semana</span><b>${r != null ? `${r > 0 ? "+" : r < 0 ? "−" : ""}${dec(Math.abs(r))} kg` : "–"}</b><small>${alvo ? `o plano é ${alvo > 0 ? "+" : "−"}${dec(Math.abs(alvo))}` : "manter"}</small></div>
+        <div class="cartao"><span>Gasto</span><b>${ge ? `${int(ge.kcal)} kcal` : "–"}</b><small>${ad.registrados} de 7 dias registrados</small></div>
+        <div class="cartao"><span>Força</span><b>${sobe} ↑ · ${cai} ↓</b><small>músculos nas últimas 4 semanas</small></div>
+        <div class="cartao"><span>Comida</span><b>${int(ad.kcalMedia)} kcal</b><small>${int(ad.protMedia)} g de proteína em média</small></div>
+      </div>
       <form data-form="checkin">
         ${escala("fome", "Fome durante a semana", "nenhuma", "muita", f.r?.fome)}
-        ${escala("energia", "Energia e disposição", "baixa", "alta", f.r?.energia)}
+        ${escala("energia", "Energia no treino", "baixa", "alta", f.r?.energia)}
         ${escala("sono", "Qualidade do sono", "ruim", "ótima", f.r?.sono)}
-        <button class="botao cheio">Ver o que o nutri acha</button>
+        <button class="botao cheio">Ver o que a equipe acha</button>
       </form>`;
   }
   const a = f.aval, m = S.metas;
+  const itens = [];
+  itens.push(a.delta
+    ? decisao(f, "comida", a.delta > 0 ? "+" : "−", a.delta > 0 ? "mais" : "menos", `Comida: ${int(m.kcal)} → ${int(a.nova)} kcal`, a.motivos[a.motivos.length - 1] || "")
+    : informacao("=", `Comida: meta continua ${int(m.kcal)} kcal`, a.motivos[a.motivos.length - 1] || ""));
+  if (f.pausa) itens.push(decisao(f, "pausa", "+", "pausa", `Semana de manutenção: +${int(f.pausa.delta)} kcal`, f.pausa.motivo));
+  for (const x of f.sugs) itens.push(decisao(f, `vol:${x.g}:${x.delta}`, `${x.delta > 0 ? "+" : "−"}${Math.abs(x.delta)}`, x.delta > 0 ? "mais" : "menos", `${GRUPOS[x.g]}: ${x.delta > 0 ? "+" : "−"}${Math.abs(x.delta)} séries`, x.motivo));
+  if (f.sinais.propor) itens.push(decisao(f, "leve", "↓", "pausa", "Semana leve no treino (7 dias)", f.sinais.sinais.filter((s) => s.ativo).map((s) => `${s.nome}: ${s.detalhe}`).join(". ")));
+  else if (!semanaLeve()) itens.push(informacao("✓", `Semana leve: ainda não`, `${f.sinais.ativos} de ${f.sinais.sinais.length} sinais (recuperação, força, sono e dor)`));
   return `
-    <h2 id="folha-titulo">Resultado do check-in</h2>
-    <ul class="motivos">${a.motivos.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+    <h2 id="folha-titulo">O que muda nesta semana</h2>
+    ${a.motivos.length > 1 ? `<ul class="motivos">${a.motivos.slice(0, -1).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
     ${f.narracao ? `<p class="narracao">${esc(f.narracao)}</p>` : ""}
-    ${a.delta ? `
-      <p class="metas">Nova meta: <b>${int(a.nova)}</b> kcal <small>(${a.delta > 0 ? "+" : "−"}${int(Math.abs(a.delta))}, era ${int(m.kcal)})</small></p>
-      <div class="par botoes">
-        <button class="botao" data-acao="fechar-checkin" data-aceitar="1">Aceitar</button>
-        <button class="botao fraco" data-acao="fechar-checkin">Manter ${int(m.kcal)}</button>
-      </div>`
-    : `<button class="botao cheio" data-acao="fechar-checkin">Fechar check-in</button>`}`;
+    ${avatarDoCheckin(f)}
+    <ul class="decisoes">${itens.join("")}</ul>
+    <button class="botao cheio" data-acao="confirmar-checkin">Confirmar check-in</button>`;
 };
 
 // ---------- aba Equipe: resumo do nutri ----------
@@ -180,13 +233,31 @@ Object.assign(ACOES, {
     if (ui.folha === f) abrirFolha(f);
   },
   "abrir-checkin"() { abrirFolha({ tipo: "checkin" }); },
-  "fechar-checkin"(b) {
-    const a = ui.folha?.aval;
+  "alternar-decisao"(b) {
+    const f = ui.folha;
+    if (!f?.aceito) return;
+    f.aceito[b.dataset.k] = !f.aceito[b.dataset.k];
+    abrirFolha(f);
+  },
+  "confirmar-checkin"() {
+    const f = ui.folha, a = f?.aval;
     if (!a) return fecharFolha();
-    const aceitar = !!b.dataset.aceitar;
-    registrarCheckin(a, aceitar);
+    const ok = f.aceito, feitas = [];
+    registrarCheckin(a, !!ok.comida);
+    if (ok.comida && a.delta) feitas.push(`meta ${int(S.metas.kcal)} kcal`);
+    if (f.pausa && ok.pausa) { aplicarTemporario(f.pausa.delta, 7); feitas.push("semana de manutenção"); }
+    const disp = (S.personal.sugestoesDispensadas ||= {});
+    for (const x of f.sugs) {
+      const k = `vol:${x.g}:${x.delta}`;
+      if (ok[k]) { aplicarSugestaoVolume(x.g, x.delta); feitas.push(`${GRUPOS[x.g].toLowerCase()} ${x.delta > 0 ? "+" : "−"}${Math.abs(x.delta)} séries`); }
+      disp[`${x.g}:${x.delta}`] = hoje();
+    }
+    if (f.sinais.propor && ok.leve) { iniciarSemanaLeve(); feitas.push("semana leve"); }
+    const ultimo = S.nutri.checkins[S.nutri.checkins.length - 1];
+    if (ultimo) ultimo.decisoes = feitas;
+    salvar();
     fecharFolha(); render();
-    avisar(aceitar && a.delta ? `Meta ajustada para ${int(S.metas.kcal)} kcal` : "Check-in registrado");
+    avisar(feitas.length ? `Check-in: ${feitas.join(", ")}` : "Check-in registrado");
   },
 });
 
@@ -194,6 +265,11 @@ FORMS.checkin = async (form) => {
   const fd = new FormData(form), r = { fome: Number(fd.get("fome")), energia: Number(fd.get("energia")), sono: Number(fd.get("sono")) };
   const f = ui.folha;
   f.r = r; f.aval = avaliarSemana(r);
+  // o que a equipe propõe junto da comida; tudo vem ligado e a pessoa desliga o que não quiser
+  f.pausa = propostaPausa(r);
+  f.sugs = sugestoesVolume().filter((x) => !(S.personal.sugestoesDispensadas || {})[`${x.g}:${x.delta}`]);
+  f.sinais = sinaisSemanaLeve();
+  f.aceito = { comida: true, pausa: true, leve: true, ...Object.fromEntries(f.sugs.map((x) => [`vol:${x.g}:${x.delta}`, true])) };
   abrirFolha(f);
   if (NARRAR.checkin) {
     try { f.narracao = await NARRAR.checkin(f.aval); if (ui.folha === f) abrirFolha(f); } catch { /* sem IA: fica só o texto das regras */ }

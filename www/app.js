@@ -6,8 +6,8 @@ import {
   novoId, exportar, importar, porcao,
 } from "./store.js";
 import { camposItem, lerItem } from "./tabela.js";
-import { ATIVIDADE, RITMOS } from "./metas.js";
-import { aplicarMetas } from "./nutri.js";
+import { ATIVIDADE, RITMOS, TRABALHO, idadeDe, idadeAtual } from "./metas.js";
+import { aplicarMetas, tendencia, ritmoEfetivo, dicaProteina } from "./nutri.js";
 import { conversar, transcrever, testarChave, temIA, ultimaRota } from "./ia.js";
 import { secaoIALocal } from "./tela-ia-ajustes.js";
 
@@ -21,10 +21,14 @@ import { telaEquipe } from "./tela-equipe.js";
 import { cartaoNutri } from "./tela-nutri.js";
 import "./tela-plano.js";
 import "./tela-relatorio.js";
+import "./tela-perfil.js";
+import "./tela-avaliacao.js";
+import "./tela-treino-corpo.js";
 import "./equipe-ia.js";
 import { iniciarEquipe } from "./equipe.js";
 import { agendarLembretes, ouvirLembretes } from "./lembretes.js";
 import { iniciarAtualizador, nativo, salvarArquivo } from "./nativo.js";
+import { LICENCA_CORPO } from "./avatar.js";
 
 const BUILD = window.NERU_BUILD || { versao: "dev", atualizacoes: "" };
 
@@ -63,8 +67,11 @@ function telaHoje() {
       </section>`;
   }
 
+  const dica = d === hoje() ? dicaProteina() : null;
   const refs = REFEICOES.map((r) => {
     const lista = itens.filter((i) => i.ref === r.id);
+    const dicaAqui = dica && dica.ref === r.id && !lista.length
+      ? `<p class="dica-prot">${{ cafe: "Seu café da manhã", almoco: "Seu almoço", pos_treino: "Seu pós-treino", janta: "Sua janta", ceia: "Sua ceia" }[r.id]} costuma ter <b>${dica.media} g</b> de proteína.${dica.sugestao ? ` ${esc(dica.sugestao.nome)} leva a ${dica.sugestao.total} g.` : ""} <button class="link" data-acao="o-que-comer">Sugerir</button></p>` : "";
     return `
       <section class="ref">
         <h2>
@@ -73,7 +80,7 @@ function telaHoje() {
           <span class="sub">${lista.length ? int(t.porRef[r.id]) + " kcal" : ""}</span>
           <button class="mais" data-acao="abrir-add" data-ref="${r.id}" aria-label="Adicionar em ${r.nome}">+</button>
         </h2>
-        ${lista.length ? `<ul>${lista.map(linhaItem).join("")}</ul>` : ""}
+        ${lista.length ? `<ul>${lista.map(linhaItem).join("")}</ul>` : ""}${dicaAqui}
       </section>`;
   }).join("");
 
@@ -341,11 +348,13 @@ async function alternarGravacao() {
 function explicarMetas(m, u) {
   if (S.metasManuais) return "Metas definidas por ti.";
   if (!m || !u) return "";
-  const at = ATIVIDADE[u.atividade];
-  let t = `Gasto estimado de ${int(m.gasto)} kcal por dia (basal de ${int(m.tmb)} com atividade ${at.nome.toLowerCase()})`;
-  if (u.objetivo === "perder") t += `, menos ${int(Math.abs(m.ajuste))} para perder cerca de ${Number(u.ritmo).toLocaleString("pt-BR")} kg por semana.`;
-  else if (u.objetivo === "ganhar") t += `, mais ${int(m.ajuste)} para ganhar cerca de ${Number(u.ritmo).toLocaleString("pt-BR")} kg por semana.`;
+  const at = ATIVIDADE[u.atividade], est = m.atividade?.fonte === "estimado";
+  let t = `Gasto estimado de ${int(m.gasto)} kcal por dia (basal de ${int(m.tmb)} com ${est ? `atividade estimada pelos seus ${dec(m.atividade.treinos)} treinos por semana` : `atividade ${at.nome.toLowerCase()}`})`;
+  const rk = ritmoEfetivo(u).toLocaleString("pt-BR");
+  if (u.objetivo === "perder") t += `, menos ${int(Math.abs(m.ajuste))} para perder cerca de ${rk} kg por semana${m.ritmoAuto ? " (ritmo automático)" : ""}.`;
+  else if (u.objetivo === "ganhar") t += `, mais ${int(m.ajuste)} para ganhar cerca de ${rk} kg por semana${m.ritmoAuto ? " (ritmo automático)" : ""}.`;
   else t += ", sem ajuste, para manter o peso.";
+  if (m.proteinaPela === "magra") t += ` A proteína sai da massa magra (${dec(m.magra)} kg).`;
   if (m.noPiso) t += ` A conta deu abaixo de ${int(m.kcal)} kcal, então a meta ficou nesse piso de segurança. Escolhe um ritmo mais leve.`;
   if (m.ajusteNutri) t += ` Os check-ins semanais ajustaram ${m.ajusteNutri > 0 ? "+" : "−"}${int(Math.abs(m.ajusteNutri))} kcal pelo teu ritmo real.`;
   return t;
@@ -360,24 +369,34 @@ function telaAjustes() {
       <h2>Perfil</h2>
       ${S.user ? "" : `<p class="intro">Para começar, preenche teus dados. O app calcula quantas calorias e quanta proteína comer por dia.</p>`}
       <form data-form="perfil">
+        <label class="campo"><span>Nome ou apelido</span><input name="apelido" maxlength="30" autocomplete="nickname" value="${esc(u.apelido || "")}"></label>
         <fieldset class="opcoes"><legend>Sexo, para a fórmula do gasto</legend>
           <label><input type="radio" name="sexo" value="m" ${marcado(u.sexo, "m")}><span>Homem</span></label>
           <label><input type="radio" name="sexo" value="f" ${marcado(u.sexo, "f")}><span>Mulher</span></label>
         </fieldset>
-        <div class="grade3">
-          <label class="campo"><span>Idade</span><input name="idade" type="number" inputmode="numeric" min="14" max="100" required value="${u.idade ?? ""}"></label>
+        <label class="campo"><span>Data de nascimento <small>${u.nascimento ? `${idadeAtual(u)} anos` : u.idade ? `hoje está ${u.idade} anos; com a data, a idade se atualiza sozinha` : "a idade se atualiza sozinha"}</small></span>
+          <input name="nascimento" type="date" max="${hoje()}" min="1900-01-01" ${u.idade ? "" : "required"} value="${esc(u.nascimento || "")}"></label>
+        <div class="grade2i">
           <label class="campo"><span>Altura <small>cm</small></span><input name="altura" type="number" inputmode="numeric" min="120" max="230" required value="${u.altura ?? ""}"></label>
           <label class="campo"><span>Peso <small>kg</small></span><input name="peso" type="number" inputmode="decimal" min="30" max="300" step="0.1" required value="${u.peso ?? ""}"></label>
         </div>
         <label class="campo"><span>Atividade</span>
           <select name="atividade">${Object.entries(ATIVIDADE).map(([k, a]) => `<option value="${k}" ${k === u.atividade ? "selected" : ""}>${a.nome}: ${a.desc}</option>`).join("")}</select></label>
+        <label class="campo"><span>No dia a dia, você passa mais tempo</span>
+          <select name="trabalho">${Object.entries(TRABALHO).map(([k, nome]) => `<option value="${k}" ${k === (u.trabalho || "sentado") ? "selected" : ""}>${nome}</option>`).join("")}</select></label>
         <fieldset class="opcoes"><legend>Objetivo</legend>
           <label><input type="radio" name="objetivo" value="perder" ${marcado(u.objetivo, "perder")}><span>Perder gordura</span></label>
           <label><input type="radio" name="objetivo" value="manter" ${marcado(u.objetivo, "manter")}><span>Manter</span></label>
           <label><input type="radio" name="objetivo" value="ganhar" ${marcado(u.objetivo, "ganhar")}><span>Ganhar massa</span></label>
         </fieldset>
         <label class="campo" id="campo-ritmo" ${u.objetivo === "manter" ? "hidden" : ""}><span>Ritmo</span>
-          <select name="ritmo">${RITMOS.map((r) => `<option value="${r}" ${Number(u.ritmo) === r ? "selected" : ""}>${r.toLocaleString("pt-BR")} kg por semana</option>`).join("")}</select></label>
+          <select name="ritmo"><option value="auto" ${u.ritmoAuto ? "selected" : ""}>Automático (recomendado)</option>${RITMOS.map((r) => `<option value="${r}" ${!u.ritmoAuto && Number(u.ritmo) === r ? "selected" : ""}>${r.toLocaleString("pt-BR")} kg por semana</option>`).join("")}</select>
+          ${u.ritmoAuto && S.metas?.ritmoAuto ? `<small class="dica">Agora: ${S.metas.ritmoAuto.kg.toLocaleString("pt-BR")} kg por semana (${S.metas.ritmoAuto.pct.toLocaleString("pt-BR")}% do peso)${S.metas.ritmoAuto.motivos.length ? ` · ${esc(S.metas.ritmoAuto.motivos.join(" · "))}` : ""}. Ajusta sozinho a cada check-in.</small>` : `<small class="dica">No automático, o ritmo sai do seu nível de treino, da gordura e da força.</small>`}</label>
+        ${u.sexo === "f" ? `<fieldset class="ciclo"><legend>Ciclo menstrual <small>opcional: o app não confunde a água retida com gordura</small></legend>
+          <div class="grade2i">
+            <label class="campo"><span>Início da última menstruação</span><input name="cicloUltima" type="date" max="${hoje()}" value="${esc(u.ciclo?.ultima || "")}"></label>
+            <label class="campo"><span>Duração do ciclo <small>dias</small></span><input name="cicloDuracao" type="number" inputmode="numeric" min="20" max="45" value="${u.ciclo?.duracao || 28}"></label>
+          </div></fieldset>` : ""}
         <button class="botao cheio">Salvar perfil</button>
       </form>
     </section>
@@ -416,6 +435,16 @@ function telaAjustes() {
       </form>
     </section>
 
+    <section class="secao">
+      <h2>Aparência</h2>
+      <fieldset class="opcoes"><legend>Tema</legend>
+        <label><input type="radio" name="tema" value="auto" ${marcado(c.tema || "auto", "auto")}><span>Automático</span></label>
+        <label><input type="radio" name="tema" value="claro" ${marcado(c.tema, "claro")}><span>Claro</span></label>
+        <label><input type="radio" name="tema" value="escuro" ${marcado(c.tema, "escuro")}><span>Escuro</span></label>
+      </fieldset>
+      <p class="dica">Automático segue o tema do celular.</p>
+    </section>
+
     ${secaoExportar()}
 
     <section class="secao">
@@ -429,8 +458,26 @@ function telaAjustes() {
       ${ui.restaurar ? `<div class="confirma"><p>Restaurar troca o diário atual pelo do arquivo ${esc(ui.restaurar.nome)}.</p>
         <div class="par botoes"><button class="botao perigo" data-acao="confirmar-restaurar">Restaurar</button><button class="botao fraco" data-acao="cancelar-restaurar">Cancelar</button></div></div>` : ""}
     </section>
+    <section class="secao">
+      <h2>Créditos</h2>
+      <p class="texto">Alimentos: Tabela Brasileira de Composição de Alimentos (TACO), 4ª edição, NEPA/UNICAMP, 2011. Desenho do corpo: react-native-body-highlighter, de ELABBASSI Hicham, licença MIT. Fonte: Bricolage Grotesque, licença SIL OFL 1.1.</p>
+      <details>
+        <summary>Licença do desenho do corpo (MIT)</summary>
+        <p class="texto licenca">${esc(LICENCA_CORPO)}</p>
+      </details>
+    </section>
     <p class="rodape">Neru Calorias, versão ${esc(BUILD.versao)}${nativo ? " (app Android)" : ""}</p>`;
 }
+
+// Tema: "auto" tira o atributo e deixa o CSS seguir o celular; "claro" e "escuro" fixam
+function aplicarTema() {
+  const t = S.cfg.tema;
+  if (t === "claro" || t === "escuro") document.documentElement.dataset.tema = t;
+  else delete document.documentElement.dataset.tema;
+  const claro = t === "claro" || (t !== "escuro" && matchMedia("(prefers-color-scheme: light)").matches);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", claro ? "#F6F2EA" : "#241A22");
+}
+matchMedia("(prefers-color-scheme: light)").addEventListener?.("change", () => { if (!S.cfg.tema || S.cfg.tema === "auto") aplicarTema(); });
 
 function lerFormIA(form) {
   const f = new FormData(form);
@@ -503,7 +550,7 @@ Object.assign(ACOES, {
   async "confirmar-restaurar"() {
     const r = ui.restaurar;
     ui.restaurar = null;
-    try { await importar(r.texto); avisar("Backup restaurado"); }
+    try { await importar(r.texto); aplicarTema(); avisar("Backup restaurado"); }
     catch (e) { avisar(e.message || "Não deu para ler esse arquivo."); }
     render();
   },
@@ -540,7 +587,9 @@ Object.assign(FORMS, {
     diaDe(hoje(), true).peso = kg;
     let extra = "";
     if (S.user) {
-      S.user.peso = kg;
+      // o peso do perfil é a tendência (média que tira o sobe-e-desce de água), não a pesagem do dia
+      const t = tendencia();
+      S.user.peso = Math.round((t[t.length - 1]?.kg || kg) * 10) / 10;
       if (!S.metasManuais) {
         const antes = S.metas?.kcal;
         aplicarMetas();
@@ -554,11 +603,17 @@ Object.assign(FORMS, {
     const f = new FormData(form), primeiraVez = !S.metas;
     // mudou o objetivo: os ajustes dos check-ins eram para o objetivo antigo
     if (S.user && S.user.objetivo !== (f.get("objetivo") || "manter")) S.nutri.ajuste = 0;
+    const nascimento = idadeDe(f.get("nascimento")) != null ? String(f.get("nascimento")) : S.user?.nascimento || "";
     S.user = {
+      apelido: String(f.get("apelido") || "").trim().slice(0, 30),
       sexo: f.get("sexo") === "f" ? "f" : "m",
-      idade: Math.round(lerNum(f.get("idade"))), altura: Math.round(lerNum(f.get("altura"))),
+      ...(nascimento ? { nascimento } : { idade: S.user?.idade }),
+      altura: Math.round(lerNum(f.get("altura"))),
       peso: Math.round(lerNum(f.get("peso")) * 10) / 10,
-      atividade: f.get("atividade"), objetivo: f.get("objetivo") || "manter", ritmo: lerNum(f.get("ritmo")) || 0.5,
+      atividade: f.get("atividade"), trabalho: TRABALHO[f.get("trabalho")] ? f.get("trabalho") : "sentado",
+      objetivo: f.get("objetivo") || "manter",
+      ritmoAuto: f.get("ritmo") === "auto", ritmo: f.get("ritmo") === "auto" ? (S.user?.ritmo || 0.5) : lerNum(f.get("ritmo")) || 0.5,
+      ...(f.get("sexo") === "f" && f.get("cicloUltima") ? { ciclo: { ultima: String(f.get("cicloUltima")), duracao: Math.round(lerNum(f.get("cicloDuracao"))) || 28 } } : {}),
     };
     if (!S.metasManuais || !S.metas) { S.metasManuais = false; aplicarMetas(); }
     diaDe(hoje(), true).peso = S.user.peso;
@@ -591,6 +646,7 @@ MUDANCAS.push((el) => {
     return true;
   }
   if (el.name === "objetivo") { $("#campo-ritmo").hidden = el.value === "manter"; return true; }
+  if (el.name === "tema") { S.cfg.tema = el.value; salvar(); aplicarTema(); return true; }
   if (el.id === "manuais") {
     S.metasManuais = el.checked;
     if (!el.checked && S.user) aplicarMetas();
@@ -637,9 +693,12 @@ TELAS.hoje = { comData: true, html: telaHoje };
 TELAS.ia = { comData: true, html: telaIA, depois: fimDoChat, manterRolagem: true };
 TELAS.treino = telaTreino;
 TELAS.equipe = telaEquipe;
-TELAS.ajustes = { titulo: "Ajustes", html: telaAjustes };
+TELAS.ajustes = { titulo: "Ajustes", aba: "perfil", html: telaAjustes };
 
 await carregar();
+aplicarTema();
+// a idade e o peso de hoje mudam a meta (aniversário, tendência nova)
+if (S.user && !S.metasManuais) aplicarMetas();
 iniciarEquipe();
 if (!S.user) ui.aba = "ajustes";
 render();

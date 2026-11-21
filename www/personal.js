@@ -3,6 +3,7 @@
 
 import { S, salvar, hoje, somaDias, novoId } from "./store.js";
 import { T, GRUPOS, EXERCICIOS, exercicio, nomeEx, GANCHOS } from "./treino.js";
+import { lesoesAtivas } from "./corpo.js";
 
 // ---------- metadados dos exercícios ----------
 const COMPOSTOS = new Set([
@@ -13,6 +14,12 @@ const COMPOSTOS = new Set([
   "elevacao_pelvica", "supino_fechado",
 ]);
 export const ehComposto = (id) => COMPOSTOS.has(id);
+
+// Exercícios a evitar: pelas lesões da avaliação e pelas dores ativas do mapa de dores
+export function exerciciosEvitados(lesoes = S.personal.avaliacao?.lesoes || []) {
+  const todas = new Set([...lesoes, ...lesoesAtivas()]);
+  return new Set([...todas].flatMap((l) => LESOES[l]?.evita || []));
+}
 
 export const LESOES = {
   ombro: { nome: "Ombro", evita: ["supino_reto", "supino_inclinado", "desenvolvimento_barra", "paralelas", "triceps_banco", "elevacao_frontal"] },
@@ -75,7 +82,7 @@ function escolher(vaga, usados, evita, variante) {
 
 // av: { nivel: iniciante|intermediario|avancado, dias, tempo, lesoes: [], prioridades: [grupo], foco: hipertrofia|forca|ambos }
 export function gerarPrograma(av) {
-  const div = divisaoPara(av), evita = new Set((av.lesoes || []).flatMap((l) => LESOES[l]?.evita || []));
+  const div = divisaoPara(av), evita = exerciciosEvitados(av.lesoes);
   const max = POR_TEMPO[av.tempo] || 6, prior = new Set(av.prioridades || []);
   const contagem = {}; // variação entre dias do mesmo tipo (A e B)
   const plano = div.dias.map((tipo, k) => {
@@ -111,32 +118,19 @@ export function gerarPrograma(av) {
 export function aplicarPrograma(prog) {
   const t = T();
   t.plano = prog.plano;
-  S.personal.bloco = { ini: hoje(), semanas: 5, divisao: prog.divisao };
+  // programa novo não abre bloco fixo: a semana leve vem pelos sinais (musculos.js)
+  S.personal.bloco = null;
+  S.personal.divisao = prog.divisao;
   salvar();
 }
 
-// ---------- volume ----------
-// Séries por semana em cada músculo pelo plano (cada dia do plano acontece uma vez por semana)
-export function volumePlanejado(plano = T().plano) {
-  const v = {};
-  for (const d of plano) for (const x of d.ex) { const g = exercicio(x.ex).g; if (g) v[g] = (v[g] || 0) + x.series; }
-  return v;
-}
-// Séries feitas nos últimos 7 dias
-export function volumeFeito(ate = hoje(), dias = 7) {
-  const v = {}, ini = somaDias(ate, -dias);
-  for (const s of T().sessoes) if (s.d > ini && s.d <= ate) for (const x of s.ex) { const g = exercicio(x.ex).g; if (g) v[g] = (v[g] || 0) + x.series.length; }
-  return v;
-}
-export function faixaVolume(g) {
-  const prior = (S.personal.avaliacao?.prioridades || []).includes(g);
-  if (g === "abdomen" || g === "antebraco" || g === "panturrilha") return [6, 16];
-  return prior ? [12, 22] : [10, 20];
-}
+// O volume por músculo (séries efetivas), a recuperação e a força por músculo ficam em musculos.js
 
 // ---------- força ----------
-export const e1rm = (kg, reps) => (kg > 0 && reps > 0 ? kg * (1 + reps / 30) : 0); // Epley
-const melhorDa = (series) => series.reduce((m, s) => Math.max(m, e1rm(s.kg, s.reps)), 0);
+// 1RM estimado (Epley) contando as repetições que ainda sobravam: 100 kg × 5 com 2 sobrando vale como 7 repetições.
+// Série sem RIR anotado conta como se tivesse ido até a falha (como o app sempre contou).
+export const e1rm = (kg, reps, rir = 0) => (kg > 0 && reps > 0 ? kg * (1 + (reps + (Number(rir) > 0 ? Number(rir) : 0)) / 30) : 0);
+export const melhorDa = (series) => series.reduce((m, s) => Math.max(m, e1rm(s.kg, s.reps, s.rir)), 0);
 
 // Recordes da semana: exercícios em que a melhor série (1RM estimado) superou tudo o que veio antes
 export function recordes(ate = hoje(), dias = 7) {
@@ -172,7 +166,7 @@ export function estagnados() {
 
 // Alternativa do mesmo músculo e tipo, respeitando lesões e sem repetir o que já está no plano
 export function alternativa(id) {
-  const g = exercicio(id).g, evita = new Set((S.personal.avaliacao?.lesoes || []).flatMap((l) => LESOES[l]?.evita || []));
+  const g = exercicio(id).g, evita = exerciciosEvitados();
   const noPlano = new Set(T().plano.flatMap((d) => d.ex.map((x) => x.ex)));
   const chaves = Object.keys(PREF).filter((k) => k.startsWith(g + ":") && PREF[k].includes(id));
   const lista = (chaves.length ? chaves : Object.keys(PREF).filter((k) => k.startsWith(g + ":"))).flatMap((k) => PREF[k]);
@@ -196,15 +190,77 @@ export function novoBloco() {
   S.personal.bloco = { ...(S.personal.bloco || {}), ini: hoje(), semanas: 5 };
   salvar();
 }
+// ---------- semana leve ----------
+// Em vez de toda 5ª semana, a semana leve vem quando o corpo pede (sinais em musculos.js) e a pessoa aceita.
+// Quem ainda está no meio de um bloco antigo termina ele normalmente.
+export function semanaLeve(d = hoje()) {
+  const s = S.personal.semanaLeve;
+  return s && d >= s.ini && d <= s.fim ? s : null;
+}
+export function iniciarSemanaLeve(dias = 7) {
+  S.personal.semanaLeve = { ini: hoje(), fim: somaDias(hoje(), dias - 1) };
+  salvar();
+}
+export function encerrarSemanaLeve() {
+  if (S.personal.semanaLeve) S.personal.semanaLeve.fim = somaDias(hoje(), -1);
+  salvar();
+}
+// Semana de recuperação agora: a semana leve aceita, ou a 5ª semana de um bloco antigo
+export const emRecuperacao = (d = hoje()) => !!semanaLeve(d) || !!blocoAtual(d)?.deload;
+
 export function ajusteDeload(nSeries, kg, passo = 2.5) {
-  const b = blocoAtual();
-  if (!b?.deload) return { nSeries, kg };
+  if (!emRecuperacao()) return { nSeries, kg };
   const menos = kg === "" || kg == null ? kg : Math.max(0, Math.round((kg * 0.9) / passo) * passo);
   return { nSeries: Math.max(1, Math.round(nSeries * 0.6)), kg: menos };
 }
 
-// Descanso sugerido entre séries, em segundos
-export const descansoPara = (id) => (ehComposto(id) ? 120 : 75);
+// Descanso sugerido entre séries, em segundos: série pesada (principal, ou composto até 5 repetições) pede mais
+export function descansoPara(id, serie = null) {
+  const reps = Number(serie?.reps) || 0;
+  if (serie?.tipo === "principal" || (ehComposto(id) && reps > 0 && reps <= 5)) return 180;
+  return ehComposto(id) ? 120 : 90;
+}
+
+// ---------- série principal + recuo (foco em força) ----------
+// Nos compostos de quem treina força: 1 série pesada perto da falha (RIR alvo 1) e as outras 10% mais leves.
+// A carga da principal sai do 1RM estimado da última principal; cumpriu o alvo, sobe um passo.
+export const ALVO_PRINCIPAL = { rir: 1 };
+const RECUO = 0.9;
+const kgBr = (kg) => `${(Math.round(kg * 100) / 100).toLocaleString("pt-BR")} kg`;
+const arredonda = (kg, passo) => Math.max(0, Math.round(kg / passo) * passo);
+export const cargaRecuo = (kg, passo = 2.5) => (kg === "" || kg == null ? "" : arredonda(Number(kg) * RECUO, passo));
+export const usaPrincipal = (exId) => S.personal.avaliacao?.foco === "forca" && ehComposto(exId);
+
+function ultimaPrincipal(exId) {
+  const ss = T().sessoes;
+  for (let i = ss.length - 1; i >= 0; i--) {
+    const x = ss[i].ex.find((y) => y.ex === exId);
+    if (!x?.series.length) continue;
+    const p = x.series.find((s) => s.tipo === "principal") || x.series.reduce((m, s) => (e1rm(s.kg, s.reps, s.rir) > e1rm(m.kg, m.reps, m.rir) ? s : m));
+    return { d: ss[i].d, serie: p };
+  }
+  return null;
+}
+export function sugerirPrincipal(exId, reps) {
+  const passo = exercicio(exId).passo || 2.5, alvoRir = ALVO_PRINCIPAL.rir, ult = ultimaPrincipal(exId);
+  if (!ult || !(ult.serie.kg > 0)) return { kg: "", e1rm: null, motivo: `Primeira vez: uma carga para ${reps} repetições sobrando ${alvoRir}.` };
+  const p = ult.serie, e = e1rm(p.kg, p.reps, p.rir);
+  const peloE1rm = Math.floor(e / (1 + (reps + alvoRir) / 30) / passo) * passo;
+  const cumpriu = p.reps >= reps && (Number(p.rir) || 0) >= alvoRir;
+  let kg, motivo;
+  if (cumpriu) { kg = Math.max(peloE1rm, p.kg + passo); motivo = `Fez ${p.reps} sobrando ${Number(p.rir) || 0} da última vez: sobe para ${kgBr(kg)}.`; }
+  else if (p.reps < reps - 1) { kg = Math.max(0, p.kg - passo); motivo = `Ficou em ${p.reps} repetições da última vez: desce para ${kgBr(kg)}.`; }
+  else { kg = p.kg; motivo = `Mantém ${kgBr(kg)} e busca ${reps} repetições sobrando ${alvoRir}.`; }
+  return { kg, e1rm: Math.round(e * 10) / 10, motivo };
+}
+GANCHOS.principal = (exId, nSeries, min, max) => {
+  if (!usaPrincipal(exId) || nSeries < 2) return null;
+  const passo = exercicio(exId).passo || 2.5, { kg } = sugerirPrincipal(exId, min);
+  return [
+    { kg, reps: "", rir: "", ok: false, tipo: "principal", alvoReps: min, alvoRir: ALVO_PRINCIPAL.rir },
+    ...Array.from({ length: nSeries - 1 }, () => ({ kg: cargaRecuo(kg, passo), reps: "", rir: "", ok: false, tipo: "recuo", alvoReps: max, alvoRir: 2 })),
+  ];
+};
 
 export { GRUPOS };
 

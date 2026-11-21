@@ -8,7 +8,9 @@ import {
   volume, totalSeries, evolucao,
 } from "./treino.js";
 import { secaoPersonal, iniciarDescanso } from "./tela-personal.js";
-import { blocoAtual } from "./personal.js";
+import { emRecuperacao, sugerirPrincipal, cargaRecuo, e1rm, melhorDa } from "./personal.js";
+import { PONTOS_DOR, nivelDor } from "./corpo.js";
+import { exercicio } from "./treino.js";
 import { secaoCardio, secaoCardioSessao, linhaCardioDia } from "./tela-cardio.js";
 import { descreverCardio } from "./cardio.js";
 
@@ -42,6 +44,7 @@ function telaInicio() {
       : `<p class="vazio">Este dia ainda não tem exercícios. Adiciona em Editar plano.</p>`}
       ${linhaCardioDia(prox.id)}
       <button class="botao cheio" data-acao="comecar-treino" data-id="${esc(prox.id)}">Começar treino</button>
+      <button class="botao fraco cheio treino-corpo" data-acao="aba" data-aba="corpotreino">Treino no corpo: estímulo, recuperação e força</button>
     </section>
 
     ${secaoPersonal()}
@@ -68,25 +71,66 @@ function telaInicio() {
 }
 
 // ---------- sessão ----------
+// Simples (iniciante): carga, repetições e marcar. Completo: RIR, série principal com alvo, 1RM do dia e sugestões.
+export const modoTreino = () => S.cfg.treinoDetalhe || (S.personal.avaliacao?.nivel === "iniciante" ? "simples" : "completo");
+
+// Regiões de dor que um exercício usa: a dor ativa nelas abre a escala de dor durante a série
+const REGIAO_GRUPOS = {
+  joelho: ["quadriceps", "posterior", "gluteos", "panturrilha"], lombar: ["costas", "posterior", "gluteos", "quadriceps"],
+  ombro: ["peito", "ombros", "costas", "triceps"], cotovelo: ["biceps", "triceps", "antebraco"], punho: ["biceps", "triceps", "antebraco", "peito"],
+};
+function doresDoExercicio(exId) {
+  const g = exercicio(exId).g;
+  return PONTOS_DOR.filter(([id, , , , , , les]) => les && REGIAO_GRUPOS[les]?.includes(g) && nivelDor(id) > 0);
+}
+function blocoDor(x, i) {
+  const pontos = doresDoExercicio(x.ex);
+  if (!pontos.length) return "";
+  const [id, nome] = pontos.find((p) => p[0] === x.dor?.ponto) || pontos[0], n = x.dor?.ponto === id ? x.dor.n : null;
+  const msg = n == null ? "Anote a dor durante a série." : n <= 2 ? "Até 2: segue normal. O personal acompanha a cada treino."
+    : n <= 4 ? "Entre 3 e 4: diminua a carga ou a amplitude na próxima série." : "Acima de 4: pare este exercício hoje.";
+  return `<div class="dor-serie">
+    <b>${esc(nome)} durante a série</b>
+    <div class="escala-dor" role="radiogroup" aria-label="Dor de 0 a 10">${Array.from({ length: 11 }, (_, k) =>
+      `<button role="radio" aria-checked="${n === k}" data-acao="dor-serie" data-i="${i}" data-ponto="${id}" data-n="${k}">${k}</button>`).join("")}</div>
+    <small>${msg}</small></div>`;
+}
+function ultimoMelhor(exId) {
+  const ss = T().sessoes;
+  for (let k = ss.length - 1; k >= 0; k--) { const y = ss[k].ex.find((z) => z.ex === exId); if (y?.series.length) return melhorDa(y.series); }
+  return null;
+}
+function linhaPrincipal(x) {
+  const p = x.series.find((s) => s.tipo === "principal");
+  if (!p) return "";
+  if (!p.ok) return `<p class="alvo-principal">Série principal: ${p.kg !== "" ? `${fmtKg(Number(p.kg))} × ` : ""}${p.alvoReps}, sobrando ${p.alvoRir}. Depois, as de recuo 10% mais leves.</p>`;
+  const agora = e1rm(p.kg, p.reps, p.rir), antes = ultimoMelhor(x.ex), dif = antes ? agora - antes : 0;
+  return `<p class="um-rm">1RM estimado hoje: <b>${fmtKg(Math.round(agora * 2) / 2)}</b>${antes ? ` <small>${Math.abs(dif) < 0.5 ? "igual ao último treino" : `${dif > 0 ? "+" : "−"}${fmtKg(Math.round(Math.abs(dif) * 2) / 2)} desde o último treino`}</small>` : ""}</p>`;
+}
+
 function telaSessao(a) {
+  const completo = modoTreino() === "completo";
   const blocos = a.ex.map((x, i) => {
-    const sug = sugerir(x.ex, x.min, x.max);
+    const sug = sugerir(x.ex, x.min, x.max), princ = x.series.some((s) => s.tipo === "principal");
+    const motivo = princ ? sugerirPrincipal(x.ex, x.min).motivo : sug.motivo;
     const antes = sug.ultima?.series || [];
     return `
       <section class="exercicio">
         <h2><span class="nome">${esc(x.nome)}</span><span class="alvo">${x.series.length} × ${x.min} a ${x.max}</span></h2>
-        <p class="sugestao">${esc(sug.motivo)}</p>
+        ${completo ? `<p class="sugestao">${esc(motivo)}</p>
         ${sug.ultima ? `<p class="ultima">Última vez, ${dataCurta(sug.ultima.d)}: ${esc(resumoSeries(antes))}</p>` : ""}
-        <ol class="series">
+        ${linhaPrincipal(x)}` : ""}
+        <ol class="series ${completo ? "" : "simples"}">
           ${x.series.map((s, j) => `
-            <li class="${s.ok ? "ok" : ""}">
-              <span class="n">${j + 1}</span>
+            <li class="${s.ok ? "ok" : ""} ${s.tipo || ""}">
+              <span class="n" ${s.tipo ? `title="${s.tipo === "principal" ? "Série principal" : "Série de recuo"}"` : ""}>${completo && s.tipo === "principal" ? "P" : j + 1}</span>
               <label><input type="number" inputmode="decimal" step="0.5" min="0" data-campo="kg" data-i="${i}" data-j="${j}" value="${s.kg}" aria-label="Carga da série ${j + 1}, em kg"><small>kg</small></label>
-              <label><input type="number" inputmode="numeric" step="1" min="0" data-campo="reps" data-i="${i}" data-j="${j}" value="${s.reps}" placeholder="${antes[j]?.reps ?? x.max}" aria-label="Repetições da série ${j + 1}"><small>reps</small></label>
-              <label class="rir"><input type="number" inputmode="numeric" step="1" min="0" max="10" data-campo="rir" data-i="${i}" data-j="${j}" value="${s.rir ?? ""}" placeholder="–" aria-label="RIR da série ${j + 1}: quantas repetições ainda sobravam"><small>RIR</small></label>
+              <label><input type="number" inputmode="numeric" step="1" min="0" data-campo="reps" data-i="${i}" data-j="${j}" value="${s.reps}" placeholder="${s.alvoReps ?? antes[j]?.reps ?? x.max}" aria-label="Repetições da série ${j + 1}"><small>reps</small></label>
+              ${completo ? `<label class="rir"><input type="number" inputmode="numeric" step="1" min="0" max="10" data-campo="rir" data-i="${i}" data-j="${j}" value="${s.rir ?? ""}" placeholder="${s.alvoRir ?? "–"}" aria-label="RIR da série ${j + 1}: quantas repetições ainda sobravam"><small>RIR</small></label>` : ""}
               <button class="marcar" data-acao="marcar-serie" data-i="${i}" data-j="${j}" aria-pressed="${s.ok}" aria-label="${s.ok ? "Desmarcar" : "Marcar"} a série ${j + 1} de ${esc(x.nome)}">${ICONE.feito}</button>
             </li>`).join("")}
         </ol>
+        ${blocoDor(x, i)}
         <div class="acoes-ex">
           <button class="link" data-acao="mais-serie" data-i="${i}">Mais uma série</button>
           ${x.series.length > 1 ? `<button class="link" data-acao="menos-serie" data-i="${i}">Tirar a última</button>` : ""}
@@ -95,8 +139,12 @@ function telaSessao(a) {
       </section>`;
   }).join("");
   return `
-    ${blocoAtual()?.deload ? `<p class="bloco-status deload">Semana de recuperação: as séries e cargas já vieram reduzidas.</p>` : ""}
-    <p class="texto">Começou às ${hora(a.ini)}. Marca cada série quando terminar; só as marcadas ficam salvas. RIR é quantas repetições ainda sobravam (0 = falha).</p>
+    <div class="segmentos" role="radiogroup" aria-label="Quanto detalhe mostrar no treino">
+      <button role="radio" data-acao="detalhe-treino" data-v="simples" aria-selected="${!completo}">Simples</button>
+      <button role="radio" data-acao="detalhe-treino" data-v="completo" aria-selected="${completo}">Completo</button>
+    </div>
+    ${emRecuperacao() ? `<p class="bloco-status deload">Semana de recuperação: as séries e cargas já vieram reduzidas.</p>` : ""}
+    <p class="texto">Começou às ${hora(a.ini)}. Marque cada série quando terminar; só as marcadas ficam salvas.${completo ? " RIR é quantas repetições ainda sobravam (0 = falha)." : ""}</p>
     ${blocos || `<p class="vazio">Nenhum exercício ainda.</p>`}
     <button class="botao fraco cheio" data-acao="abrir-biblioteca" data-para="sessao">Adicionar exercício</button>
     ${secaoCardioSessao(a)}
@@ -258,11 +306,13 @@ Object.assign(ACOES, {
     s.rir = rirTxt === "" ? "" : Math.min(10, Math.max(0, Math.round(lerNum(rirTxt))));
     if (!(reps > 0)) { avisar("Preenche as repetições desta série"); $("[data-campo=reps]", linha).focus(); return; }
     s.kg = kg; s.reps = reps; s.ok = true;
-    for (const depois of x.series.slice(j + 1)) if (!depois.ok && depois.kg === "") depois.kg = kg;
+    // a principal define o recuo: 10% mais leve; nas outras séries, a carga segue a da série anterior
+    if (s.tipo === "principal") { const passo = exercicio(x.ex).passo || 2.5; for (const r of x.series) if (r.tipo === "recuo" && !r.ok) r.kg = cargaRecuo(kg, passo); }
+    else for (const depois of x.series.slice(j + 1)) if (!depois.ok && depois.kg === "") depois.kg = kg;
     salvar(); render();
     // descanso, salvo depois da última série do treino
     const fim = T().atual.ex.every((y) => y.series.every((z) => z.ok));
-    if (!fim) iniciarDescanso(x.ex);
+    if (!fim) iniciarDescanso(x.ex, s);
   },
   "mais-serie"(b) {
     const x = T().atual.ex[b.dataset.i], ult = x.series[x.series.length - 1];
@@ -286,6 +336,13 @@ Object.assign(ACOES, {
     descartar(); render(); window.scrollTo(0, 0);
   },
 
+  "detalhe-treino"(b) { S.cfg.treinoDetalhe = b.dataset.v; salvar(); render(); },
+  "dor-serie"(b) {
+    const x = T().atual?.ex[Number(b.dataset.i)];
+    if (!x) return;
+    x.dor = { ponto: b.dataset.ponto, n: Number(b.dataset.n) };
+    salvar(); render();
+  },
   "ver-sessao"(b) { abrirFolha({ tipo: "sessao", id: b.dataset.id }); },
   "excluir-sessao"(b) {
     if (!confirmar(b, "Excluir mesmo?")) return;

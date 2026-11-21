@@ -5,7 +5,9 @@
 import { S, REFEICOES, hoje, somaDias, diaDe, totais, pesos, refPelaHora, salvar } from "./store.js";
 import { alimento, semAcento } from "./tabela.js";
 import { CARDAPIO, MOLDES } from "./cardapio.js";
-import { calcMetas } from "./metas.js";
+import { calcMetas, ritmoAutomatico, ATIVIDADE } from "./metas.js";
+import { gorduraEm } from "./corpo.js";
+import { forcaPorMusculo } from "./musculos.js";
 
 const KCAL_POR_KG = 7700;
 const ORDEM = REFEICOES.map((r) => r.id);
@@ -23,9 +25,40 @@ function recalcularCarbo(m) {
   m.fat = Math.round((m.kcal * 0.25) / 9 / 5) * 5;
   m.carbs = Math.max(0, Math.round((m.kcal - m.protein * 4 - m.fat * 9) / 4 / 5) * 5);
 }
+// ---------- o que o app sabe da pessoa entra na meta ----------
+// Atividade estimada pelos treinos e cardio das últimas 4 semanas (com 4 treinos ou mais), mais o tipo de trabalho
+export function atividadeEstimada(u = S.user, ate = hoje()) {
+  const declarado = ATIVIDADE[u?.atividade]?.f || 1.2, ini = somaDias(ate, -28);
+  const ss = (S.treino?.sessoes || []).filter((s) => s.d > ini && s.d <= ate);
+  if (ss.length < 4) return { fonte: "declarado", fator: declarado };
+  const treinos = ss.length / 4;
+  const cardio = (S.treino?.cardio || []).filter((c) => c.d > ini && c.d <= ate).reduce((s, c) => s + (Number(c.min) || 0), 0) / 4;
+  const trabalho = { sentado: 0, em_pe: 0.1, bracal: 0.25 }[u?.trabalho] || 0;
+  const fator = Math.min(2, 1.2 + 0.065 * treinos + 0.02 * (cardio / 30) + trabalho);
+  return { fonte: "estimado", fator: Math.round(fator * 1000) / 1000, treinos: Math.round(treinos * 10) / 10, cardioMin: Math.round(cardio) };
+}
+// Massa magra (para a proteína) e o ritmo automático (pelo nível do treino, a gordura e a força)
+export function contextoMetas(u = S.user) {
+  const atividade = atividadeEstimada(u);
+  const g = u ? gorduraEm(hoje()) : null, bf = g?.bf ?? null;
+  const magra = bf != null && u?.peso > 0 ? Math.round(Number(u.peso) * (1 - bf / 100) * 10) / 10 : null;
+  let auto = null;
+  if (u?.ritmoAuto && u.objetivo !== "manter") {
+    const caindo = Object.values(forcaPorMusculo()).filter((x) => x.tendencia === "caindo").length >= 2;
+    auto = ritmoAutomatico(u, { nivel: S.personal?.avaliacao?.nivel, bf, forcaCaindo: caindo });
+  }
+  return { atividade, bf, magra, auto };
+}
+// Ritmo de peso por semana que vale agora (kg): o automático, ou o escolhido
+export const ritmoEfetivo = (u = S.user) => S.metas?.ritmoAuto?.kg ?? Number(u?.ritmo || (u?.objetivo === "ganhar" ? 0.25 : 0.5));
+
 export function aplicarMetas() {
-  const m = calcMetas(S.user);
+  const ctx = contextoMetas();
+  const m = calcMetas(S.user, { fator: ctx.atividade.fonte === "estimado" ? ctx.atividade.fator : null, ritmoKg: ctx.auto?.kg, magra: ctx.magra });
   if (!m) { S.metas = null; return null; }
+  m.atividade = ctx.atividade;
+  if (ctx.auto) m.ritmoAuto = ctx.auto;
+  if (ctx.magra) m.magra = ctx.magra;
   const aj = S.nutri.ajuste || 0;
   if (aj) {
     m.kcal = Math.max(pisoKcal(), r10(m.kcal + aj));
@@ -81,7 +114,7 @@ function grupoPelaBase(b) {
 // ---------- perfil: como você come em cada refeição ----------
 // Olha os dias anteriores (não o de hoje), ignorando dias com menos de 600 kcal (registro incompleto).
 export function perfil(ate = hoje(), janela = 28) {
-  const refs = Object.fromEntries(ORDEM.map((r) => [r, { dias: 0, kcal: 0, partes: [], alimentos: new Map(), combos: new Map() }]));
+  const refs = Object.fromEntries(ORDEM.map((r) => [r, { dias: 0, kcal: 0, prot: 0, partes: [], alimentos: new Map(), combos: new Map() }]));
   const usoTaco = new Map();
   let dias = 0;
   for (let n = 1; n <= janela; n++) {
@@ -94,7 +127,7 @@ export function perfil(ate = hoje(), janela = 28) {
       const P = refs[r], lista = itens.filter((i) => i.ref === r);
       if (!lista.length) { P.partes.push(0); continue; }
       const kc = lista.reduce((s, i) => s + i.kcal, 0);
-      P.dias++; P.kcal += kc; P.partes.push(kc / total);
+      P.dias++; P.kcal += kc; P.prot += lista.reduce((s, i) => s + i.protein, 0); P.partes.push(kc / total);
       const chaves = new Set();
       for (const i of lista) {
         const k = chaveItem(i);
@@ -114,6 +147,7 @@ export function perfil(ate = hoje(), janela = 28) {
   for (const r of ORDEM) {
     const P = refs[r];
     P.kcalMedia = P.dias ? P.kcal / P.dias : 0;
+    P.protMedia = P.dias ? P.prot / P.dias : 0;
     P.parte = P.partes.length ? P.partes.reduce((s, x) => s + x, 0) / P.partes.length : null;
     P.frequencia = dias ? P.dias / dias : 0;
   }
@@ -423,7 +457,7 @@ export function checkinPendente(d = hoje()) {
 // respostas: { fome, energia, sono } de 1 a 5. Devolve a decisão do nutri, sem aplicar.
 export function avaliarSemana(respostas = {}, ate = hoje()) {
   const u = S.user, m = S.metas, ad = adesao(ate), ritmo = ritmoPeso(ate, 2), gasto = gastoReal(somaDias(ate, -1));
-  const alvoRitmo = u.objetivo === "perder" ? -Number(u.ritmo || 0.5) : u.objetivo === "ganhar" ? Number(u.ritmo || 0.25) : 0;
+  const alvoRitmo = u.objetivo === "perder" ? -ritmoEfetivo(u) : u.objetivo === "ganhar" ? ritmoEfetivo(u) : 0;
   const motivos = [];
   let delta = 0;
   const mal = respostas.energia <= 2 && respostas.fome >= 4;
@@ -436,10 +470,12 @@ export function avaliarSemana(respostas = {}, ate = hoje()) {
     motivos.push("Faltam pesagens nas últimas duas semanas para saber o ritmo. Pesa-te pelo menos 3 vezes por semana.");
   } else {
     const ajObj = (alvoRitmo * KCAL_POR_KG) / 7;
-    if (gasto.ok && gasto.confianca !== "baixa") {
-      // com o gasto real medido, a meta vai para gasto + ajuste do objetivo, aos poucos
-      delta = clamp(r10(gasto.tdee + ajObj - m.kcal), -150, 150);
-      motivos.push(`Teu gasto real nas últimas 3 semanas ficou em ${gasto.tdee} kcal por dia (confiança ${gasto.confianca}).`);
+    if (gasto.ok) {
+      // com o gasto medido, a meta vai para o gasto (misturado com a fórmula conforme a confiança) + o objetivo, aos poucos
+      const ge = gastoEstimado();
+      delta = clamp(r10(ge.kcal + ajObj - m.kcal), -150, 150);
+      motivos.push(gasto.confianca === "alta" ? `Seu gasto real nas últimas 3 semanas ficou em ${gasto.tdee} kcal por dia.`
+        : `Seu gasto medido ficou em ${gasto.tdee} kcal por dia (confiança ${gasto.confianca}); misturado com a fórmula, o app usa ${ge.kcal}.`);
     } else if (u.objetivo === "perder") {
       if (ritmo > alvoRitmo * 0.5) delta = ritmo >= 0 ? -150 : -100;
       else if (ritmo < alvoRitmo * 1.5 || ritmo < -1) delta = 100;
@@ -454,6 +490,10 @@ export function avaliarSemana(respostas = {}, ate = hoje()) {
     else if (mal && u.objetivo === "perder" && delta === 0) { delta = 100; motivos.push("Fome alta e energia baixa: um respiro de 100 kcal ajuda a manter o plano."); }
   }
   if (m && ad.registrados >= 4 && ad.protOk < ad.registrados * 0.6) motivos.push(`A proteína ficou abaixo da meta em ${ad.registrados - ad.protOk} de ${ad.registrados} dias (média de ${ad.protMedia} g para uma meta de ${m.protein} g). O botão "O que eu como agora?" ajuda a fechar.`);
+  // semana antes da menstruação: a água retida disfarça a perda; o app não aperta a meta por isso
+  if (u.objetivo === "perder" && delta < 0 && (emRetencao(ate) || emRetencao(somaDias(ate, -3)))) {
+    delta = 0; motivos.push("O peso desta semana pegou dias de retenção do ciclo: a meta fica como está.");
+  }
   // com algum alerta de saúde na consulta, mudanças menores
   if (S.perfil?.alertas?.length && Math.abs(delta) > 100) { delta = Math.sign(delta) * 100; motivos.push("Por causa do que contaste na consulta, o ajuste fica em no máximo 100 kcal por semana."); }
   const nova = m ? Math.max(pisoKcal(), r10(m.kcal + delta)) : null;
@@ -485,4 +525,42 @@ export function momentoDoDia(d = hoje(), agora = new Date()) {
   if (!t.kcal && h < 11) return { tipo: "manha", kcal: m.kcal, prot: m.protein, faltam };
   if (h >= 21.5 || !faltam.length) return { tipo: "fim", kcal, prot, consumido: t, faltam };
   return { tipo: "meio", kcal, prot, faltam };
+}
+
+// ---------- gasto: da fórmula para o medido, aos poucos ----------
+// A fórmula (com a atividade estimada pelos treinos) vai dando lugar ao gasto medido conforme a confiança dele.
+export function gastoEstimado() {
+  const m = S.metas, g = gastoReal(), formula = m?.gasto ?? calcMetas(S.user)?.gasto;
+  if (!formula) return null;
+  const peso = g.ok ? ({ baixa: 0.4, "média": 0.7, alta: 0.9 }[g.confianca] ?? 0) : 0;
+  const kcal = r10(formula * (1 - peso) + (g.ok ? g.tdee : 0) * peso);
+  const fonte = peso >= 0.7 ? "medido" : peso > 0 || m?.atividade?.fonte === "estimado" ? "estimado" : "declarado";
+  return { kcal, fonte, peso, real: g, formula };
+}
+
+// ---------- ciclo menstrual ----------
+// No perfil feminino, a semana antes da menstruação e os 2 primeiros dias dela costumam reter água
+export function emRetencao(d = hoje(), u = S.user) {
+  const c = u?.ciclo;
+  if (u?.sexo !== "f" || !c?.ultima) return false;
+  const dur = Math.max(20, Math.min(45, Number(c.duracao) || 28));
+  const dias = Math.round((new Date(d) - new Date(c.ultima)) / 864e5);
+  if (dias < 0) return false;
+  const fase = dias % dur;
+  return fase >= dur - 7 || fase <= 1;
+}
+
+// ---------- proteína por refeição ----------
+// A refeição que a pessoa costuma fazer com pouca proteína, e um alimento que leva ela para perto de 20 g
+export function dicaProteina(P = perfil()) {
+  if (P.dias < 5 || !S.metas) return null;
+  const fracas = ORDEM.filter((r) => P.refs[r].frequencia >= 0.5 && P.refs[r].protMedia < 15)
+    .sort((a, b) => P.refs[a].protMedia - P.refs[b].protMedia);
+  if (!fracas.length) return null;
+  const ref = fracas[0], media = Math.round(P.refs[ref].protMedia);
+  const op = opcoesDoGrupo("proteina_leve", ref, P)[0] || opcoesDoGrupo("proteina", ref, P)[0];
+  if (!op) return { ref, media };
+  const a = alimento(op.t), g = op.unidade ? op.unidade.g : op.g, prot = (a[3] * g) / 100;
+  const nome = op.unidade ? `1 ${op.unidade.nome}` : `${g} g de ${a[1].split(",")[0].toLowerCase()}`;
+  return { ref, media, sugestao: { nome, prot: Math.round(prot), total: Math.round(media + prot) } };
 }

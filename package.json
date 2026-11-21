@@ -5,6 +5,7 @@
   "description": "Diário de calorias, proteína e treino. App web + Android (Capacitor).",
   "scripts": {
     "build": "python3 tools/build.py",
+    "test": "node --test tests/*.test.mjs",
     "android": "python3 tools/build.py && npx cap sync android && python3 tools/preparar_android.py"
   },
   "dependencies": {

@@ -11,7 +11,8 @@ import { NARRAR_PERSONAL } from "./tela-personal.js";
 import { NARRAR_RELATORIO } from "./tela-relatorio.js";
 import { SECOES, hidratarFotos } from "./tela-equipe.js";
 import { adesao, ritmoPeso, gastoReal } from "./nutri.js";
-import { recordes, estagnados, volumeFeito, faixaVolume, blocoAtual } from "./personal.js";
+import { recordes, estagnados, blocoAtual, semanaLeve } from "./personal.js";
+import { volumeFeito, faixaVolume } from "./musculos.js";
 import { T, GRUPOS } from "./treino.js";
 import { POSES, sessoesDeFotos, fotoParaIA, ultimasMedidas, composicao } from "./corpo.js";
 import { resumoCardio, faseCardio, planoCardio, evolucaoLeve } from "./cardio.js";
@@ -36,11 +37,12 @@ export function contextoEquipe() {
     peso_kg_por_semana: ritmoPeso(),
     sono_medio_h: sono.length ? Math.round((sono.reduce((s, x) => s + x, 0) / sono.length) * 10) / 10 : null,
     treino: {
-      bloco: b ? { semana: b.semana, de: b.semanas, recuperacao: b.deload } : null,
+      bloco: b && !b.acabou ? { semana: b.semana, de: b.semanas, recuperacao: b.deload } : null,
+      semana_leve: semanaLeve() ? { ate: semanaLeve().fim } : null,
       treinos_7_dias: T().sessoes.filter((s) => s.d > somaDias(hoje(), -7)).length,
       recordes: recordes().map((r) => ({ exercicio: r.nome, ganho_pct: r.ganho })),
       parados: estagnados().map((x) => x.nome),
-      series_por_musculo_7_dias: Object.fromEntries(Object.entries(feito).map(([g, v]) => [GRUPOS[g] || g, { feitas: v, faixa: faixaVolume(g) }])),
+      series_efetivas_por_musculo_7_dias: Object.fromEntries(Object.entries(feito).map(([g, v]) => [GRUPOS[g] || g, { feitas: v, faixa: faixaVolume(g) }])),
     },
     cardio: contextoCardio(),
   };

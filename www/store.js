@@ -23,7 +23,7 @@ export function refPelaHora(data = new Date()) {
 const padrao = () => ({
   v: 2,
   seq: 0,
-  user: null,          // { sexo, idade, altura, peso, atividade, objetivo, ritmo }
+  user: null,          // { apelido, sexo, nascimento (AAAA-MM-DD), idade (antiga, sem nascimento), altura, peso, atividade, trabalho, objetivo, ritmo }
   metas: null,         // { kcal, protein, carbs, fat, ... }
   metasManuais: false,
   dias: {},            // "2026-11-16": { itens: [...], peso: 80.2, sono: 7.5, supl: [ids] }
@@ -35,6 +35,8 @@ const padrao = () => ({
   perfil: null,        // anamnese da consulta inicial (consulta.js)
   nutri: { modo: "flexivel", plano: null, checkins: [], consultas: [] },
   personal: { avaliacao: null, bloco: null },
+  // avaliação corporal e saúde (corpo.js): dores por ponto do corpo, exames de referência e a saúde básica
+  corpo: { dores: {}, exames: [], calibrar: false, pressao: [], fc: [], sangue: [] },
   relatorios: [],      // relatórios semanais da equipe (equipe.js)
   equipe: { dispensados: {} }, // avisos da equipe já dispensados
   cfg: {
@@ -43,6 +45,8 @@ const padrao = () => ({
     nuvemFotoPrato: true,    // foto de prato vai para a OpenAI (mais precisa)
     nuvemRevisao: true,      // retorno mensal com a OpenAI
     nuvemFotoCorpo: false,   // fotos do físico nunca saem do aparelho, salvo se ligar aqui
+    doisLados: false,        // medir os membros dos dois lados (simetria)
+    tema: "auto",            // "auto" (segue o celular), "claro" ou "escuro"
     lembretes: { ativo: false, refeicoes: true, pesagem: true, checkin: true, treino: true, diasTreino: [2, 3, 4, 5, 6] },
   },
 });
@@ -91,7 +95,7 @@ function aplicar(dados) {
   for (const k of Object.keys(S)) delete S[k];
   Object.assign(S, base, dados || {});
   // objetos com campos novos: junta o padrão com o que veio, para dados antigos ganharem os campos
-  for (const k of ["cfg", "nutri", "personal"]) S[k] = { ...base[k], ...(dados?.[k] || {}) };
+  for (const k of ["cfg", "nutri", "personal", "corpo"]) S[k] = { ...base[k], ...(dados?.[k] || {}) };
   S.cfg.lembretes = { ...base.cfg.lembretes, ...(dados?.cfg?.lembretes || {}) };
   S.v = base.v;
 }
@@ -213,16 +217,36 @@ export function pesos() {
 }
 
 // ---------- medidas (cm) ----------
+// Na ordem do corpo, de cima para baixo (é a ordem da tela de medidas)
 export const MEDIDAS = [
   { id: "pescoco", nome: "Pescoço", dica: "logo abaixo do pomo de adão" },
-  { id: "cintura", nome: "Cintura", dica: "na altura do umbigo, sem encolher a barriga" },
-  { id: "quadril", nome: "Quadril", dica: "na parte mais larga do bumbum" },
+  { id: "ombros", nome: "Ombros", dica: "na parte mais larga dos ombros, braços relaxados" },
   { id: "peito", nome: "Peito", dica: "na linha dos mamilos, braços relaxados" },
   { id: "braco", nome: "Braço", dica: "contraído, na parte mais grossa" },
+  { id: "antebraco", nome: "Antebraço", dica: "na parte mais grossa, perto do cotovelo, mão aberta" },
+  { id: "cintura", nome: "Cintura", dica: "na altura do umbigo, sem encolher a barriga" },
+  { id: "quadril", nome: "Quadril", dica: "na parte mais larga do bumbum" },
   { id: "coxa", nome: "Coxa", dica: "no meio da coxa, em pé" },
+  { id: "panturrilha", nome: "Panturrilha", dica: "na parte mais grossa, em pé e relaxado" },
 ];
 export function medicoes() {
   return Object.keys(S.dias).filter((d) => S.dias[d].med).sort().map((d) => ({ d, ...S.dias[d].med }));
+}
+// Membros que dá para medir dos dois lados: a medida principal é o lado direito; o esquerdo fica em <id>_esq
+export const LADOS = ["braco", "antebraco", "coxa", "panturrilha"];
+// Medidas que incham logo depois do treino: numa avaliação marcada como pós-treino, não entram nas conclusões
+const INCHAM = new Set(["peito", "ombros", ...LADOS, ...LADOS.map((k) => k + "_esq")]);
+export const posTreino = (d) => !!S.dias[d]?.avaliacao?.posTreino;
+
+// A última medida conhecida de cada parte do corpo até a data (medidas parciais se completam com as anteriores)
+export function medidasAte(ate = hoje()) {
+  const out = {}, ids = [...MEDIDAS.map((x) => x.id), ...LADOS.map((k) => k + "_esq")];
+  for (const m of medicoes()) {
+    if (m.d > ate) break;
+    const inchado = posTreino(m.d);
+    for (const id of ids) if (m[id] > 0 && !(inchado && INCHAM.has(id))) out[id] = { v: m[id], d: m.d };
+  }
+  return out;
 }
 
 // ---------- backup ----------

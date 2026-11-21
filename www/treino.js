@@ -208,8 +208,18 @@ export function proximoDia() {
 
 // ---------- sessão ----------
 // Ganchos do personal (personal.js), sem import circular: deload ajusta séries e carga da semana de recuperação
-export const GANCHOS = { deload: null, cardio: null };
+export const GANCHOS = { deload: null, cardio: null, principal: null };
 function exDaSessao(exId, nSeries, min, max) {
+  // foco em força: série principal + recuo (personal.js); na semana de recuperação, menos séries e carga
+  const princ = GANCHOS.principal?.(exId, nSeries, min, max);
+  if (princ) {
+    let series = princ;
+    if (GANCHOS.deload) {
+      const passo = exercicio(exId).passo || 2.5, { nSeries: n } = GANCHOS.deload(nSeries, "", passo);
+      series = series.slice(0, Math.max(1, n)).map((s) => ({ ...s, kg: GANCHOS.deload(1, s.kg, passo).kg }));
+    }
+    return { ex: exId, nome: nomeEx(exId), min, max, series };
+  }
   const sug = sugerir(exId, min, max);
   let n = nSeries, kg = sug.kg ?? "";
   if (GANCHOS.deload) ({ nSeries: n, kg } = GANCHOS.deload(nSeries, kg, exercicio(exId).passo || 2.5));
@@ -243,7 +253,11 @@ export function concluir() {
   const ex = a.ex
     .map((x) => ({
       ex: x.ex, nome: x.nome, min: x.min, max: x.max,
-      series: feitas(x.series).map((s) => ({ kg: Number(s.kg) || 0, reps: Number(s.reps), ...(s.rir === "" || s.rir == null ? {} : { rir: Number(s.rir) }), ok: true })),
+      series: feitas(x.series).map((s) => ({
+        kg: Number(s.kg) || 0, reps: Number(s.reps), ...(s.rir === "" || s.rir == null ? {} : { rir: Number(s.rir) }),
+        ...(s.tipo ? { tipo: s.tipo } : {}), ok: true,
+      })),
+      ...(x.dor ? { dor: x.dor } : {}),
     }))
     .filter((x) => x.series.length);
   t.atual = null;

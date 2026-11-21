@@ -34,6 +34,8 @@ export const ICONE = {
   enviar: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19.5v-15M5.5 11 12 4.5 18.5 11"/></svg>`,
   antes: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>`,
   depois: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 5.5 16 12l-6.5 6.5"/></svg>`,
+  ajustes: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>`,
+  fita: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="8" width="20" height="8" rx="2"/><path d="M6 8v3M10 8v4M14 8v3M18 8v4"/></svg>`,
   cima: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 14.5 12 8l6.5 6.5"/></svg>`,
   baixo: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 9.5 12 16l6.5-6.5"/></svg>`,
   feito: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7.5"/></svg>`,
@@ -63,15 +65,22 @@ function topo() {
       <button class="dia" data-acao="dia-hoje" aria-label="${a}, ${b}. Voltar para hoje"><strong>${a}</strong><span>${b}</span></button>
       <button class="seta" data-acao="dia" data-n="1" aria-label="Próximo dia" ${ui.data >= hoje() ? "disabled" : ""}>${ICONE.depois}</button>`;
   } else {
-    el.innerHTML = `<h1>${esc(typeof tela.titulo === "function" ? tela.titulo() : tela.titulo)}</h1>`;
+    // tela de dentro de outra aba (tela.aba) ganha o botão de voltar; tela.botao põe uma ação à direita
+    // volta para a tela de onde veio (ui.volta), senão para a aba dona dela
+    const alvo = ui.volta && ui.volta !== ui.aba && TELAS[ui.volta] ? ui.volta : tela.aba && tela.aba !== ui.aba ? tela.aba : null;
+    const pai = alvo ? TELAS[alvo] : null;
+    const voltar = pai ? `<button class="seta" data-acao="aba" data-aba="${alvo}" aria-label="Voltar para ${esc(pai.titulo)}">${ICONE.antes}</button>` : "";
+    const b = tela.botao;
+    const direita = b ? `<button class="icone-topo" data-acao="${b.acao}" ${b.aba ? `data-aba="${b.aba}"` : ""} aria-label="${esc(b.rotulo)}">${b.icone}</button>` : "";
+    el.innerHTML = `${voltar}<h1>${esc(typeof tela.titulo === "function" ? tela.titulo() : tela.titulo)}</h1>${direita}`;
   }
 }
 
 export function render() {
-  const tela = TELAS[ui.aba];
+  const tela = TELAS[ui.aba], ativa = tela.aba || ui.aba;
   topo();
   for (const b of document.querySelectorAll("#abas button")) {
-    if (b.dataset.aba === ui.aba) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+    if (b.dataset.aba === ativa) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
   }
   const el = $("#tela");
   el.className = "tela-" + ui.aba;
@@ -107,6 +116,7 @@ export function fecharFolha() {
 Object.assign(ACOES, {
   aba(b) {
     ui.aba = b.dataset.aba; ui.testeIA = null;
+    ui.volta = b.dataset.volta || null;
     if (b.dataset.treino) ui.treino = b.dataset.treino;
     render();
     if (!TELAS[ui.aba].manterRolagem) window.scrollTo(0, 0);
