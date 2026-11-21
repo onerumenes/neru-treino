@@ -103,27 +103,45 @@ export function secaoPersonal() {
 }
 
 // ---------- cronômetro de descanso ----------
+// Na tela do treino ele é um cartão com o anel do tempo; fora dela, a barra fixa embaixo
 let relogio = null;
 export function iniciarDescanso(exId, serie = null) {
   const seg = descansoPara(exId, serie);
-  ui.descanso = { fim: Date.now() + seg * 1000, total: seg };
+  ui.descanso = { fim: Date.now() + seg * 1000, total: seg, tipo: serie?.tipo === "principal" || seg >= 180 ? "composto pesado" : seg >= 120 ? "composto" : "isolado" };
   clearInterval(relogio);
   relogio = setInterval(atualizarDescanso, 500);
   atualizarDescanso();
 }
-function atualizarDescanso() {
-  const el = $("#descanso");
-  if (!el) return;
+const L = 2 * Math.PI * 42;
+export function cartaoDescanso() {
   const d = ui.descanso;
-  if (!d) { el.hidden = true; clearInterval(relogio); return; }
+  if (!d) return "";
+  const resta = Math.max(0, Math.ceil((d.fim - Date.now()) / 1000)), mm = Math.floor(resta / 60), ss = String(resta % 60).padStart(2, "0");
+  const fracao = Math.min(1, resta / d.total);
+  return `
+    <section class="cartao-descanso ${resta <= 0 ? "acabou" : ""}">
+      <svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="42" class="fundo-anel"/><circle cx="50" cy="50" r="42" class="anel" stroke-dasharray="${(fracao * L).toFixed(1)} ${L.toFixed(1)}" transform="rotate(-90 50 50)"/><text x="50" y="57" text-anchor="middle">${resta > 0 ? `${mm}:${ss}` : "0:00"}</text></svg>
+      <div>
+        <span><b>${resta > 0 ? "Descanso" : "Descanso acabou"}</b><small>${resta > 0 ? `${Math.round(d.total / 60 * 10) / 10 >= 1 ? `${Math.round(d.total / 60 * 10) / 10} min` : `${d.total} s`} · ${d.tipo}` : "Próxima série"}</small></span>
+        <div class="acoes-descanso">
+          <button data-acao="menos-descanso">−15 s</button><button data-acao="mais-descanso">+15 s</button><button class="pular" data-acao="fechar-descanso">${resta > 0 ? "Pular" : "OK"}</button>
+        </div>
+      </div>
+    </section>`;
+}
+function atualizarDescanso() {
+  const el = $("#descanso"), cartao = $("#descanso-cartao");
+  const d = ui.descanso;
+  if (!d) { if (el) el.hidden = true; if (cartao) cartao.innerHTML = ""; clearInterval(relogio); return; }
   const resta = Math.ceil((d.fim - Date.now()) / 1000);
-  if (resta <= 0) {
-    el.innerHTML = `<span><b>Descanso acabou.</b> Próxima série.</span><button data-acao="fechar-descanso">OK</button>`;
-    if (!d.avisou) { d.avisou = true; try { navigator.vibrate?.([200, 100, 200]); } catch { /* sem vibração */ } }
-    if (resta < -20) { ui.descanso = null; }
-  } else {
+  if (resta <= 0 && !d.avisou) { d.avisou = true; try { navigator.vibrate?.([200, 100, 200]); } catch { /* sem vibração */ } }
+  if (resta < -20) { ui.descanso = null; atualizarDescanso(); return; }
+  if (cartao) { cartao.innerHTML = cartaoDescanso(); if (el) el.hidden = true; return; }
+  if (!el) return;
+  if (resta <= 0) el.innerHTML = `<span><b>Descanso acabou.</b> Próxima série.</span><button data-acao="fechar-descanso">OK</button>`;
+  else {
     const mm = Math.floor(resta / 60), ss = String(resta % 60).padStart(2, "0");
-    el.innerHTML = `<span>Descanso <b>${mm}:${ss}</b></span><span class="acoes"><button data-acao="mais-descanso">+30 s</button><button data-acao="fechar-descanso">Pular</button></span>`;
+    el.innerHTML = `<span>Descanso <b>${mm}:${ss}</b></span><span class="acoes"><button data-acao="mais-descanso">+15 s</button><button data-acao="fechar-descanso">Pular</button></span>`;
   }
   el.hidden = false;
 }
@@ -150,7 +168,8 @@ Object.assign(ACOES, {
     try { ui.narracaoPersonal = await NARRAR_PERSONAL.revisao(); } catch (e) { ui.narracaoPersonal = e.message || "Não deu para falar com a IA agora."; }
     if (ui.aba === "treino") render();
   },
-  "mais-descanso"() { if (ui.descanso) { ui.descanso.fim += 30000; atualizarDescanso(); } },
+  "mais-descanso"() { if (ui.descanso) { ui.descanso.fim += 15000; ui.descanso.total += 15; atualizarDescanso(); } },
+  "menos-descanso"() { if (ui.descanso) { ui.descanso.fim -= 15000; atualizarDescanso(); } },
   "fechar-descanso"() { ui.descanso = null; atualizarDescanso(); },
 });
 

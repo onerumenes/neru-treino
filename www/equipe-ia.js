@@ -2,8 +2,9 @@
 // calcularam. Ela recebe só os números prontos e é instruída a não inventar valores. Também comenta as fotos do
 // físico, que por padrão só são vistas pela IA do celular.
 
+import { SECOES_FOTOS } from "./tela-fotos.js";
 import { S, nomeRef, hoje, somaDias, salvar, porcao } from "./store.js";
-import { esc, dataCurta, ui, ACOES, render, avisar } from "./base.js";
+import { esc, dec, dataCurta, ui, ACOES, render, avisar } from "./base.js";
 import { falar, temIA, ultimaRota } from "./ia.js";
 import { NARRAR } from "./tela-nutri.js";
 import { NARRAR_PLANO } from "./tela-plano.js";
@@ -134,22 +135,26 @@ async function analisarFotos() {
 function secaoAnalise() {
   if (!sessoesDeFotos().length) return "";
   const ult = (S.personal.analises || []).slice(-1)[0], pode = temIA("foto_corpo");
+  const comp = composicao(ultimasMedidas().atual || {});
   return `
-    <section class="secao">
-      <h2>Olhar do personal</h2>
-      ${ult ? `<p class="narracao">${esc(ult.texto)}</p><p class="legenda"><span>${dataCurta(ult.d)}, ${POSES.find((p) => p.id === ult.pose)?.nome.toLowerCase() || ""}${ult.de !== ult.ate ? `, de ${dataCurta(ult.de)} a ${dataCurta(ult.ate)}` : ""}${ult.via === "local" ? ", IA do celular" : ", OpenAI"}</span></p>` : ""}
-      ${pode ? `<button class="botao fraco cheio" data-acao="analisar-fotos">${ui.analisando ? "Analisando…" : "Pedir a análise das fotos"}</button>
-        <p class="dica">${S.cfg.nuvemFotoCorpo ? "As fotos podem ir para a OpenAI (ligado em Ajustes)." : "Analisadas pela IA do celular; não saem do aparelho."}</p>`
-      : `<p class="vazio">A análise das fotos usa a IA do celular, para elas não saírem do aparelho. Baixa o modelo em Ajustes > IA no celular.</p>`}
+    <section class="caixa analise-fotos">
+      <div class="titulo-caixa"><h2>Avaliação pelas fotos</h2>${ult ? `<span class="chip">${dataCurta(ult.d)}</span>` : ""}</div>
+      ${comp ? `<ul class="linhas embutida"><li><span><b>Gordura pela ${comp.metodo === "dobras" ? "dobra" : "fita"}</b><small>As fotos não estimam número: ele vem das medidas</small></span><b>${dec(comp.bf)}%</b></li></ul>` : ""}
+      ${ult ? `<blockquote class="olhar">${esc(ult.texto)}</blockquote>
+        <p class="dica">${POSES.find((p) => p.id === ult.pose)?.nome || ""}${ult.de !== ult.ate ? `, de ${dataCurta(ult.de)} a ${dataCurta(ult.ate)}` : ""}</p>` : ""}
+      ${pode ? `<button class="botao fraco cheio" data-acao="analisar-fotos">${ui.analisando ? "Analisando…" : ult ? "Analisar de novo" : "Pedir a análise das fotos"}</button>`
+        : `<p class="vazio">A análise usa a IA do celular, para as fotos não saírem do aparelho. Baixe o modelo em Ajustes > IA no celular.</p>`}
+      <p class="dica com-icone"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>${S.cfg.nuvemFotoCorpo ? "As fotos podem ir para a OpenAI (ligado em Ajustes)." : "Analisado pela IA do celular. As fotos não saem do aparelho."}</p>
     </section>`;
 }
 SECOES.corpo.push(secaoAnalise);
+SECOES_FOTOS.push(secaoAnalise);
 
 ACOES["analisar-fotos"] = async (b) => {
   if (ui.analisando) return;
   ui.analisando = true; b.disabled = true; b.textContent = "Analisando…";
   try { await analisarFotos(); } catch (e) { avisar(e.message || "Não deu para analisar agora."); }
   ui.analisando = false;
-  if (ui.aba === "equipe") { render(); hidratarFotos(document); }
+  if (ui.aba === "equipe" || ui.aba === "fotos") { render(); hidratarFotos(document); }
 };
 

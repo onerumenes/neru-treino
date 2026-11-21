@@ -1,14 +1,18 @@
 // Telas do treino: início (próximo treino e histórico), sessão em andamento e editor do plano.
 
-import { S, salvar } from "./store.js";
+import { S, salvar, hoje } from "./store.js";
 import { $, esc, int, lerNum, dataCurta, ui, ACOES, FORMS, FOLHAS, MUDANCAS, ICONE, render, avisar, abrirFolha, fecharFolha } from "./base.js";
 import {
   T, GRUPOS, temPlano, usarModelo, nomeEx, biblioteca, criarExercicio, diaDoPlano, addDia, mover,
   sugerir, resumoSeries, fmtKg, proximoDia, iniciar, addExNaSessao, concluir, descartar, removerSessao,
   volume, totalSeries, evolucao,
 } from "./treino.js";
-import { secaoPersonal, iniciarDescanso } from "./tela-personal.js";
-import { emRecuperacao, sugerirPrincipal, cargaRecuo, e1rm, melhorDa } from "./personal.js";
+import { secaoPersonal, iniciarDescanso, cartaoDescanso } from "./tela-personal.js";
+import { emRecuperacao, sugerirPrincipal, cargaRecuo, e1rm, melhorDa, ehComposto } from "./personal.js";
+import { musculosDo } from "./musculos.js";
+import { svgCorpo } from "./avatar.js";
+import { comCorpo, desenhar } from "./tela-perfil.js";
+import { GRUPO_DE } from "./tela-treino-corpo.js";
 import { PONTOS_DOR, nivelDor } from "./corpo.js";
 import { exercicio } from "./treino.js";
 import { secaoCardio, secaoCardioSessao, linhaCardioDia } from "./tela-cardio.js";
@@ -71,7 +75,9 @@ function telaInicio() {
 }
 
 // ---------- sessão ----------
-// Simples (iniciante): carga, repetições e marcar. Completo: RIR, série principal com alvo, 1RM do dia e sugestões.
+// Um exercício por vez (mockup "Treino em andamento"): a série da vez com mais e menos, as feitas e as que faltam,
+// o descanso logo abaixo e a lista do que vem depois.
+// Simples (iniciante): carga, repetições e marcar. Completo: RIR, série principal com alvo, 1RM do dia e músculos que ajudam.
 export const modoTreino = () => S.cfg.treinoDetalhe || (S.personal.avaliacao?.nivel === "iniciante" ? "simples" : "completo");
 
 // Regiões de dor que um exercício usa: a dor ativa nelas abre a escala de dor durante a série
@@ -100,58 +106,131 @@ function ultimoMelhor(exId) {
   for (let k = ss.length - 1; k >= 0; k--) { const y = ss[k].ex.find((z) => z.ex === exId); if (y?.series.length) return melhorDa(y.series); }
   return null;
 }
-function linhaPrincipal(x) {
-  const p = x.series.find((s) => s.tipo === "principal");
-  if (!p) return "";
-  if (!p.ok) return `<p class="alvo-principal">Série principal: ${p.kg !== "" ? `${fmtKg(Number(p.kg))} × ` : ""}${p.alvoReps}, sobrando ${p.alvoRir}. Depois, as de recuo 10% mais leves.</p>`;
-  const agora = e1rm(p.kg, p.reps, p.rir), antes = ultimoMelhor(x.ex), dif = antes ? agora - antes : 0;
-  return `<p class="um-rm">1RM estimado hoje: <b>${fmtKg(Math.round(agora * 2) / 2)}</b>${antes ? ` <small>${Math.abs(dif) < 0.5 ? "igual ao último treino" : `${dif > 0 ? "+" : "−"}${fmtKg(Math.round(Math.abs(dif) * 2) / 2)} desde o último treino`}</small>` : ""}</p>`;
+const COSTAS = new Set(["costas", "posterior", "gluteos", "panturrilha", "triceps"]);
+function miniCorpo(exId) {
+  if (!comCorpo()) return `<span class="avatar-carregando"></span>`;
+  const ms = musculosDo(exId), principal = ms[0]?.[0];
+  if (!principal) return "";
+  const peso = Object.fromEntries(ms);
+  const camada = (s) => (GRUPO_DE[s] === principal ? "sel" : peso[GRUPO_DE[s]] ? "ajuda" : "musculo");
+  return svgCorpo(desenhar(COSTAS.has(principal) ? "back" : "front", hoje(), {}, { camada }), { cores: { sel: "#F27A68", ajuda: "#F7CF6B", musculo: "#5B4853" }, rotulo: `Músculos de ${nomeEx(exId)}` });
+}
+
+// A série da vez: a primeira não marcada de um exercício
+const daVez = (x) => x.series.findIndex((s) => !s.ok);
+function exercicioAtual(a) {
+  if (ui.exAtual != null && a.ex[ui.exAtual]) return ui.exAtual;
+  const i = a.ex.findIndex((x) => daVez(x) >= 0);
+  return i >= 0 ? i : Math.max(0, a.ex.length - 1);
+}
+// valores que a série da vez mostra antes de mexer: o que já foi digitado, o alvo, a última vez ou o mínimo da faixa
+function valoresDaVez(x, j, sug) {
+  const s = x.series[j], ant = sug.ultima?.series || [];
+  const kg = s.kg !== "" && s.kg != null ? Number(s.kg) : Number(sug.kg) || 0;
+  const reps = s.reps !== "" && s.reps != null ? Number(s.reps) : Number(s.alvoReps ?? ant[j]?.reps ?? x.min) || x.min;
+  const rir = s.rir !== "" && s.rir != null ? Number(s.rir) : s.alvoRir ?? 2;
+  return { kg, reps, rir };
+}
+const passo = (exId) => exercicio(exId).passo || 2.5;
+const stepper = (campo, i, j, valor, rotulo, un = "") => `
+  <div class="passo">
+    <span>${rotulo}</span>
+    <span class="passo-ctrl">
+      <button data-acao="passo-serie" data-campo="${campo}" data-i="${i}" data-j="${j}" data-n="-1" aria-label="Menos ${rotulo.toLowerCase()}">−</button>
+      <b>${valor}${un}</b>
+      <button data-acao="passo-serie" data-campo="${campo}" data-i="${i}" data-j="${j}" data-n="1" aria-label="Mais ${rotulo.toLowerCase()}">+</button>
+    </span>
+  </div>`;
+
+function serieDaVez(x, i, j, completo, sug) {
+  const s = x.series[j], v = valoresDaVez(x, j, sug), principal = s.tipo === "principal";
+  const titulo = principal ? "Série principal" : s.tipo === "recuo" ? `Recuo ${x.series.slice(0, j + 1).filter((z) => z.tipo === "recuo").length}` : `Série ${j + 1} de ${x.series.length}`;
+  const alvo = principal && s.alvoReps ? `alvo: ${s.kg !== "" ? fmtKg(Number(s.kg)) + " × " : ""}${s.alvoReps}${completo ? `, sobrando ${s.alvoRir}` : ""}` : `faixa: ${x.min} a ${x.max}`;
+  const um = completo && v.kg > 0 ? e1rm(v.kg, v.reps, v.rir) : 0, antes = um ? ultimoMelhor(x.ex) : null, dif = antes ? um - antes : 0;
+  return `
+    <div class="serie-vez">
+      <div class="cab-vez"><b>${titulo}</b><small>${esc(alvo)}</small></div>
+      <div class="passos ${completo ? "tres" : "dois"}">
+        <div class="passo carga">
+          <span>Carga</span>
+          <span class="passo-ctrl">
+            <button data-acao="passo-serie" data-campo="kg" data-i="${i}" data-j="${j}" data-n="-1" aria-label="Menos carga">−</button>
+            <label><span class="so-leitor">Carga em kg</span><input type="number" inputmode="decimal" step="0.5" min="0" data-campo="kg" data-i="${i}" data-j="${j}" value="${v.kg || ""}" placeholder="0"></label>
+            <button data-acao="passo-serie" data-campo="kg" data-i="${i}" data-j="${j}" data-n="1" aria-label="Mais carga">+</button>
+          </span>
+        </div>
+        ${stepper("reps", i, j, v.reps, "Repetições")}
+        ${completo ? stepper("rir", i, j, v.rir, "Sobraram (RIR)") : ""}
+      </div>
+      ${completo && um ? `<div class="um-rm"><span><small>1RM estimado ${principal ? "hoje" : "nesta série"}</small><b>${fmtKg(Math.round(um * 2) / 2)}</b></span>
+        <span>${antes ? (Math.abs(dif) < 0.5 ? "igual ao último treino" : `${dif > 0 ? "+" : "−"}${fmtKg(Math.round(Math.abs(dif) * 2) / 2)} desde o último treino`) : "primeira vez"}</span></div>` : ""}
+      <button class="botao escuro cheio" data-acao="marcar-serie" data-i="${i}" data-j="${j}">Feita</button>
+    </div>`;
+}
+
+function linhaSerie(x, i, j, completo, vez) {
+  const s = x.series[j];
+  const txt = s.ok ? `${Number(s.kg) > 0 ? fmtKg(Number(s.kg)) + " × " : ""}${s.reps}`
+    : `${s.kg !== "" && Number(s.kg) > 0 ? fmtKg(Number(s.kg)) + " × " : ""}${s.alvoReps ?? `${x.min} a ${x.max}`}`;
+  const estado = s.ok ? `feita${completo && s.rir !== "" && s.rir != null ? ` · sobraram ${s.rir}` : ""}` : j === vez + 1 ? "depois do descanso" : "";
+  return `<li><button class="linha-serie ${s.ok ? "ok" : ""}" ${s.ok ? `data-acao="marcar-serie" data-i="${i}" data-j="${j}" aria-label="Desmarcar a série ${j + 1}"` : `data-acao="serie-vez" data-i="${i}" data-j="${j}"`}>
+    <span class="bola">${s.ok ? ICONE.feito : completo && s.tipo === "principal" ? "P" : j + 1}</span><b>${txt}</b><small>${estado}</small></button></li>`;
+}
+
+function cartaoExercicio(a, i, completo) {
+  const x = a.ex[i], sug = sugerir(x.ex, x.min, x.max), princ = x.series.some((s) => s.tipo === "principal");
+  const ms = musculosDo(x.ex), vez = ui.serieVez?.i === i && x.series[ui.serieVez.j] && !x.series[ui.serieVez.j].ok ? ui.serieVez.j : daVez(x);
+  const rotulo = princ ? "Força · série principal + recuo" : ehComposto(x.ex) ? "Composto" : "Isolado";
+  const feitas = x.series.map((_, j) => j).filter((j) => j !== vez);
+  return `
+    <section class="caixa ex-atual">
+      <div class="ex-cab">
+        <div>
+          ${completo ? `<small class="rotulo-ex">${esc(rotulo)}</small>` : ""}
+          <h2>${esc(x.nome)}</h2>
+          <span class="chips-musc">${ms.length ? `<span class="principal">${esc(GRUPOS[ms[0][0]])}</span>` : ""}${completo ? ms.slice(1).map(([g]) => `<span>${esc(GRUPOS[g])}</span>`).join("") : ""}</span>
+          ${completo && (princ ? sugerirPrincipal(x.ex, x.min).motivo : sug.motivo) ? `<p class="sugestao">${esc(princ ? sugerirPrincipal(x.ex, x.min).motivo : sug.motivo)}</p>` : ""}
+        </div>
+        <div class="mini-corpo">${miniCorpo(x.ex)}</div>
+      </div>
+      ${vez >= 0 ? serieDaVez(x, i, vez, completo, sug) : `<p class="tudo-feito">${ICONE.feito}Todas as séries feitas</p>`}
+      ${feitas.length ? `<ol class="lista-series">${feitas.map((j) => linhaSerie(x, i, j, completo, vez)).join("")}</ol>` : ""}
+      ${blocoDor(x, i)}
+      <div class="acoes-ex">
+        <button class="link" data-acao="mais-serie" data-i="${i}">Mais uma série</button>
+        ${x.series.length > 1 ? `<button class="link" data-acao="menos-serie" data-i="${i}">Tirar a última</button>` : ""}
+        <button class="link fraco" data-acao="tirar-ex-sessao" data-i="${i}">Tirar exercício</button>
+      </div>
+    </section>`;
 }
 
 function telaSessao(a) {
-  const completo = modoTreino() === "completo";
-  const blocos = a.ex.map((x, i) => {
-    const sug = sugerir(x.ex, x.min, x.max), princ = x.series.some((s) => s.tipo === "principal");
-    const motivo = princ ? sugerirPrincipal(x.ex, x.min).motivo : sug.motivo;
-    const antes = sug.ultima?.series || [];
-    return `
-      <section class="exercicio">
-        <h2><span class="nome">${esc(x.nome)}</span><span class="alvo">${x.series.length} × ${x.min} a ${x.max}</span></h2>
-        ${completo ? `<p class="sugestao">${esc(motivo)}</p>
-        ${sug.ultima ? `<p class="ultima">Última vez, ${dataCurta(sug.ultima.d)}: ${esc(resumoSeries(antes))}</p>` : ""}
-        ${linhaPrincipal(x)}` : ""}
-        <ol class="series ${completo ? "" : "simples"}">
-          ${x.series.map((s, j) => `
-            <li class="${s.ok ? "ok" : ""} ${s.tipo || ""}">
-              <span class="n" ${s.tipo ? `title="${s.tipo === "principal" ? "Série principal" : "Série de recuo"}"` : ""}>${completo && s.tipo === "principal" ? "P" : j + 1}</span>
-              <label><input type="number" inputmode="decimal" step="0.5" min="0" data-campo="kg" data-i="${i}" data-j="${j}" value="${s.kg}" aria-label="Carga da série ${j + 1}, em kg"><small>kg</small></label>
-              <label><input type="number" inputmode="numeric" step="1" min="0" data-campo="reps" data-i="${i}" data-j="${j}" value="${s.reps}" placeholder="${s.alvoReps ?? antes[j]?.reps ?? x.max}" aria-label="Repetições da série ${j + 1}"><small>reps</small></label>
-              ${completo ? `<label class="rir"><input type="number" inputmode="numeric" step="1" min="0" max="10" data-campo="rir" data-i="${i}" data-j="${j}" value="${s.rir ?? ""}" placeholder="${s.alvoRir ?? "–"}" aria-label="RIR da série ${j + 1}: quantas repetições ainda sobravam"><small>RIR</small></label>` : ""}
-              <button class="marcar" data-acao="marcar-serie" data-i="${i}" data-j="${j}" aria-pressed="${s.ok}" aria-label="${s.ok ? "Desmarcar" : "Marcar"} a série ${j + 1} de ${esc(x.nome)}">${ICONE.feito}</button>
-            </li>`).join("")}
-        </ol>
-        ${blocoDor(x, i)}
-        <div class="acoes-ex">
-          <button class="link" data-acao="mais-serie" data-i="${i}">Mais uma série</button>
-          ${x.series.length > 1 ? `<button class="link" data-acao="menos-serie" data-i="${i}">Tirar a última</button>` : ""}
-          <button class="link fraco" data-acao="tirar-ex-sessao" data-i="${i}">Tirar exercício</button>
-        </div>
-      </section>`;
-  }).join("");
+  const completo = modoTreino() === "completo", atual = exercicioAtual(a);
+  const outros = a.ex.map((x, i) => ({ x, i })).filter(({ i }) => i !== atual);
+  const pendentes = outros.filter(({ x }) => daVez(x) >= 0), prontos = outros.filter(({ x }) => daVez(x) < 0);
+  const item = ({ x, i }) => {
+    const feitas = x.series.filter((s) => s.ok).length;
+    return `<li><button data-acao="ex-atual" data-i="${i}"><span><b>${esc(x.nome)}</b>${feitas && feitas < x.series.length ? `<small>${feitas} de ${x.series.length} séries feitas</small>` : ""}</span>
+      ${daVez(x) < 0 ? `<span class="ok-ex">${ICONE.feito}</span>` : `<b>${x.series.length} × ${x.series[0]?.alvoReps ?? x.min}${x.series[0]?.alvoReps ? "" : x.max !== x.min ? ` a ${x.max}` : ""}</b>`}</button></li>`;
+  };
   return `
     <div class="segmentos" role="radiogroup" aria-label="Quanto detalhe mostrar no treino">
-      <button role="radio" data-acao="detalhe-treino" data-v="simples" aria-selected="${!completo}">Simples</button>
-      <button role="radio" data-acao="detalhe-treino" data-v="completo" aria-selected="${completo}">Completo</button>
+      <button role="radio" data-acao="detalhe-treino" data-v="simples" aria-checked="${!completo}" aria-selected="${!completo}">Simples</button>
+      <button role="radio" data-acao="detalhe-treino" data-v="completo" aria-checked="${completo}" aria-selected="${completo}">Completo</button>
     </div>
     ${emRecuperacao() ? `<p class="bloco-status deload">Semana de recuperação: as séries e cargas já vieram reduzidas.</p>` : ""}
-    <p class="texto">Começou às ${hora(a.ini)}. Marque cada série quando terminar; só as marcadas ficam salvas.${completo ? " RIR é quantas repetições ainda sobravam (0 = falha)." : ""}</p>
-    ${blocos || `<p class="vazio">Nenhum exercício ainda.</p>`}
-    <button class="botao fraco cheio" data-acao="abrir-biblioteca" data-para="sessao">Adicionar exercício</button>
+    ${a.ex.length ? cartaoExercicio(a, atual, completo) : `<section class="caixa"><p class="vazio">Nenhum exercício ainda.</p></section>`}
+    <div id="descanso-cartao">${cartaoDescanso()}</div>
+    ${pendentes.length ? `<section class="secao lista-depois"><h2>Depois</h2><ul>${pendentes.map(item).join("")}</ul></section>` : ""}
+    ${prontos.length ? `<section class="secao lista-depois"><h2>Feitos</h2><ul>${prontos.map(item).join("")}</ul></section>` : ""}
+    <section class="secao">
+      <button class="botao fraco cheio" data-acao="abrir-biblioteca" data-para="sessao">Adicionar exercício</button>
+    </section>
     ${secaoCardioSessao(a)}
-    <div class="par botoes fim-sessao">
-      <button class="botao" data-acao="concluir-treino">Concluir treino</button>
-      <button class="botao perigo" data-acao="descartar-treino">Descartar</button>
-    </div>`;
+    <section class="secao fim-sessao">
+      <button class="botao escuro cheio" data-acao="concluir-treino">Terminar o treino</button>
+      <button class="botao perigo cheio" data-acao="descartar-treino">Descartar</button>
+    </section>`;
 }
 
 // ---------- plano ----------
@@ -197,6 +276,15 @@ export const telaTreino = {
     if (a) return a.nome;
     return ui.treino === "plano" && temPlano() ? "Plano de treino" : "Treino";
   },
+  // treino em andamento: botão de sair (o treino continua aberto), tempo e exercício no subtítulo, Terminar à direita
+  voltar() { return S.treino?.atual ? { aba: "hoje", rotulo: "Sair do treino (ele continua aberto)" } : ui.treino === "plano" && temPlano() ? { acao: "fechar-plano", rotulo: "Voltar ao treino" } : null; },
+  sub() {
+    const a = S.treino?.atual;
+    if (!a) return "";
+    const min = Math.max(0, Math.round((Date.now() - a.ini) / 60000));
+    return a.ex.length ? `${min} min · exercício ${exercicioAtual(a) + 1} de ${a.ex.length}` : `${min} min`;
+  },
+  direita() { return S.treino?.atual ? `<button class="botao-topo" data-acao="concluir-treino">Terminar</button>` : ""; },
   html() {
     const a = S.treino?.atual;
     if (a) return telaSessao(a);
@@ -296,24 +384,39 @@ Object.assign(ACOES, {
   "abrir-biblioteca"(b) { abrirFolha({ tipo: "biblioteca", para: b.dataset.para, i: Number(b.dataset.i) }); },
   "escolher-ex"(b) { adicionarEscolhido(b.dataset.id); },
 
-  "comecar-treino"(b) { iniciar(b.dataset.id); ui.treino = "inicio"; render(); window.scrollTo(0, 0); },
+  "comecar-treino"(b) { iniciar(b.dataset.id); ui.treino = "inicio"; ui.exAtual = null; ui.serieVez = null; render(); window.scrollTo(0, 0); },
   "marcar-serie"(b) {
-    const i = Number(b.dataset.i), j = Number(b.dataset.j), x = T().atual.ex[i], s = x.series[j];
-    if (s.ok) { s.ok = false; salvar(); render(); return; }
-    const linha = b.closest("li");
-    const kg = lerNum($("[data-campo=kg]", linha).value), reps = Math.round(lerNum($("[data-campo=reps]", linha).value));
-    const rirTxt = $("[data-campo=rir]", linha).value;
-    s.rir = rirTxt === "" ? "" : Math.min(10, Math.max(0, Math.round(lerNum(rirTxt))));
-    if (!(reps > 0)) { avisar("Preenche as repetições desta série"); $("[data-campo=reps]", linha).focus(); return; }
-    s.kg = kg; s.reps = reps; s.ok = true;
+    const a = T().atual, i = Number(b.dataset.i), j = Number(b.dataset.j), x = a.ex[i], s = x.series[j];
+    if (s.ok) { s.ok = false; ui.serieVez = { i, j }; ui.exAtual = i; salvar(); render(); return; }
+    const v = valoresDaVez(x, j, sugerir(x.ex, x.min, x.max));
+    if (!(v.reps > 0)) { avisar("Coloque as repetições desta série"); return; }
+    s.kg = v.kg; s.reps = v.reps; s.ok = true;
+    s.rir = modoTreino() === "completo" ? v.rir : s.rir ?? "";
     // a principal define o recuo: 10% mais leve; nas outras séries, a carga segue a da série anterior
-    if (s.tipo === "principal") { const passo = exercicio(x.ex).passo || 2.5; for (const r of x.series) if (r.tipo === "recuo" && !r.ok) r.kg = cargaRecuo(kg, passo); }
-    else for (const depois of x.series.slice(j + 1)) if (!depois.ok && depois.kg === "") depois.kg = kg;
+    if (s.tipo === "principal") { for (const r of x.series) if (r.tipo === "recuo" && !r.ok) r.kg = cargaRecuo(v.kg, passo(x.ex)); }
+    else for (const depois of x.series.slice(j + 1)) if (!depois.ok && depois.kg === "") depois.kg = v.kg;
+    ui.serieVez = null;
+    // acabou o exercício: o próximo que ainda tem série vira o da vez
+    if (daVez(x) < 0) { const prox = a.ex.findIndex((y, k) => k > i && daVez(y) >= 0); const qualquer = a.ex.findIndex((y) => daVez(y) >= 0); ui.exAtual = prox >= 0 ? prox : qualquer >= 0 ? qualquer : i; }
     salvar(); render();
     // descanso, salvo depois da última série do treino
-    const fim = T().atual.ex.every((y) => y.series.every((z) => z.ok));
+    const fim = a.ex.every((y) => y.series.every((z) => z.ok));
     if (!fim) iniciarDescanso(x.ex, s);
   },
+  "passo-serie"(b) {
+    const i = Number(b.dataset.i), j = Number(b.dataset.j), x = T().atual?.ex[i], s = x?.series[j];
+    if (!s) return;
+    const v = valoresDaVez(x, j, sugerir(x.ex, x.min, x.max)), n = Number(b.dataset.n), c = b.dataset.campo;
+    if (c === "kg") s.kg = Math.max(0, Math.round((v.kg + n * passo(x.ex)) * 100) / 100);
+    else if (c === "reps") s.reps = Math.max(1, v.reps + n);
+    else s.rir = Math.min(10, Math.max(0, v.rir + n));
+    // o valor mostrado passa a ser o digitado: guarda também os outros dois
+    if (s.kg === "" || s.kg == null) s.kg = v.kg;
+    if (s.reps === "" || s.reps == null) s.reps = v.reps;
+    salvar(); render();
+  },
+  "serie-vez"(b) { ui.serieVez = { i: Number(b.dataset.i), j: Number(b.dataset.j) }; render(); },
+  "ex-atual"(b) { ui.exAtual = Number(b.dataset.i); ui.serieVez = null; render(); window.scrollTo(0, 0); },
   "mais-serie"(b) {
     const x = T().atual.ex[b.dataset.i], ult = x.series[x.series.length - 1];
     x.series.push({ kg: ult?.kg ?? "", reps: "", rir: "", ok: false });
@@ -322,7 +425,7 @@ Object.assign(ACOES, {
   "menos-serie"(b) { T().atual.ex[b.dataset.i].series.pop(); salvar(); render(); },
   "tirar-ex-sessao"(b) {
     if (!confirmar(b, "Tirar mesmo?")) return;
-    T().atual.ex.splice(Number(b.dataset.i), 1); salvar(); render();
+    T().atual.ex.splice(Number(b.dataset.i), 1); ui.exAtual = null; ui.serieVez = null; salvar(); render();
   },
   "concluir-treino"() {
     const a = T().atual;

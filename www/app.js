@@ -7,7 +7,8 @@ import {
 } from "./store.js";
 import { camposItem, lerItem } from "./tabela.js";
 import { ATIVIDADE, RITMOS, TRABALHO, idadeDe, idadeAtual } from "./metas.js";
-import { aplicarMetas, tendencia, ritmoEfetivo, dicaProteina } from "./nutri.js";
+import { aplicarMetas, tendencia, ritmoEfetivo, dicaProteina, sugerirResto } from "./nutri.js";
+import { temPlano, proximoDia } from "./treino.js";
 import { conversar, transcrever, testarChave, temIA, ultimaRota } from "./ia.js";
 import { secaoIALocal } from "./tela-ia-ajustes.js";
 
@@ -22,6 +23,8 @@ import { cartaoNutri } from "./tela-nutri.js";
 import "./tela-plano.js";
 import "./tela-relatorio.js";
 import "./tela-perfil.js";
+import "./tela-dados.js";
+import "./tela-fotos.js";
 import "./tela-avaliacao.js";
 import "./tela-treino-corpo.js";
 import "./equipe-ia.js";
@@ -39,67 +42,99 @@ const EXEMPLOS = [
 ];
 
 // ---------- diário ----------
-function telaHoje() {
-  const d = ui.data, t = totais(d), m = S.metas, itens = diaDe(d).itens;
-  let resumo;
-  if (m) {
-    const resta = m.kcal - t.kcal, escala = Math.max(m.kcal, t.kcal) || 1;
-    const segs = REFEICOES.filter((r) => t.porRef[r.id] > 0)
-      .map((r) => `<i style="width:${((t.porRef[r.id] / escala) * 100).toFixed(2)}%;background:${r.cor}"></i>`).join("");
-    const marca = resta < 0 ? `<b class="marca" style="left:${((m.kcal / escala) * 100).toFixed(2)}%"></b>` : "";
-    const pctP = m.protein ? Math.min(100, (t.protein / m.protein) * 100) : 0;
-    resumo = `
-      <section class="resumo ${resta < 0 ? "passou" : ""}">
-        <p class="numero"><small>${resta < 0 ? "Passou" : "Restam"}</small><span>${int(Math.abs(resta))}</span><em>kcal</em></p>
-        <div class="barra kcal" role="img" aria-label="${int(t.kcal)} de ${int(m.kcal)} kcal">${segs}${marca}</div>
-        <p class="legenda"><span>${int(t.kcal)} de ${int(m.kcal)} kcal</span></p>
-        <div class="barra prot" role="img" aria-label="Proteína: ${int(t.protein)} de ${int(m.protein)} gramas"><i style="width:${pctP.toFixed(2)}%"></i></div>
-        <p class="legenda"><span>Proteína <b>${int(t.protein)}</b> de ${int(m.protein)} g</span></p>
-        <p class="legenda outros"><span>Carboidrato ${int(t.carbs)} g</span><span>Gordura ${int(t.fat)} g</span></p>
-      </section>`;
-  } else {
-    resumo = `
-      <section class="resumo sem-metas">
-        <p class="numero"><span>${int(t.kcal)}</span><em>kcal</em></p>
-        <p class="legenda"><span>Proteína <b>${int(t.protein)}</b> g</span><span>Carboidrato ${int(t.carbs)} g</span><span>Gordura ${int(t.fat)} g</span></p>
-        <p class="convite">Preenche teu perfil para o app calcular tuas metas de calorias e proteína.</p>
-        <button class="botao" data-acao="aba" data-aba="ajustes">Preencher perfil</button>
+const CHAMA = { cafe: "Seu café da manhã", almoco: "Seu almoço", pos_treino: "Seu pós-treino", janta: "Sua janta", ceia: "Sua ceia" };
+const ICONE_IA = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/></svg>`;
+const ICONE_HALTER = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10v4M6 7v10M18 7v10M21 10v4M6 12h12"/></svg>`;
+const pct = (a, b) => (b > 0 ? Math.max(0, Math.min(100, (a / b) * 100)) : 0).toFixed(1);
+const nomesItens = (lista) => {
+  const nomes = lista.map((i) => i.nome.split(",")[0].trim());
+  const txt = nomes.slice(0, 4).join(", ");
+  return nomes.length > 4 ? `${txt} e mais ${nomes.length - 4}` : txt;
+};
+
+function painelDia(d, t, m) {
+  if (!m) {
+    return `
+      <section class="painel-dia">
+        <div class="kcal-linha"><div><span>Calorias</span><b>${int(t.kcal)}</b><span>kcal no dia</span></div></div>
+        <p>Preencha seus dados para o app calcular as metas de calorias e proteína.</p>
+        <button class="botao escuro cheio" data-acao="aba" data-aba="dados">Preencher perfil</button>
       </section>`;
   }
+  const resta = m.kcal - t.kcal;
+  const mostraSugestao = d === hoje() && (resta > 80 || m.protein - t.protein > 15);
+  return `
+    <section class="painel-dia ${resta < 0 ? "passou" : ""}">
+      <div class="kcal-linha">
+        <div><span>Calorias</span><b>${int(t.kcal)}</b><span>de ${int(m.kcal)} kcal</span></div>
+        <div class="faltam"><span>${resta < 0 ? "passou" : "faltam"}</span><b>${int(Math.abs(resta))}</b></div>
+      </div>
+      <span class="trilho-dia" role="img" aria-label="${int(t.kcal)} de ${int(m.kcal)} kcal"><i style="width:${pct(t.kcal, m.kcal)}%"></i></span>
+      <div class="prot-dia">
+        <div><span>Proteína</span><span><b>${int(t.protein)}</b> de ${int(m.protein)} g</span></div>
+        <span class="trilho" role="img" aria-label="Proteína: ${int(t.protein)} de ${int(m.protein)} gramas"><i style="width:${pct(t.protein, m.protein)}%;background:var(--couve-forte)"></i></span>
+        <div><small>Carbo ${int(t.carbs)} g · Gordura ${int(t.fat)} g</small><small>${m.proteinaPela === "magra" ? "meta pela massa magra" : "meta pelo peso"}</small></div>
+      </div>
+      ${mostraSugestao ? `<button class="botao escuro cheio" data-acao="o-que-comer">${ICONE_IA}O que eu como agora?</button>` : ""}
+    </section>`;
+}
 
+function cartaoRefeicao(r, lista, d, alvo, dica) {
+  const kc = lista.reduce((s, i) => s + i.kcal, 0), pr = lista.reduce((s, i) => s + i.protein, 0);
+  const cor = `<i class="cor" style="background:${r.cor}"></i>`;
+  const textoDica = dica ? `<p class="dica-prot"><span>${CHAMA[r.id]} costuma ter <b>${dica.media} g</b> de proteína.${dica.sugestao ? ` ${esc(dica.sugestao.nome)} leva a ${dica.sugestao.total} g.` : ""}</span><button class="link" data-acao="o-que-comer">Trocar</button></p>` : "";
+  if (!lista.length) {
+    const sug = alvo ? `Sugestão: ${int(alvo.kcal)} kcal${alvo.prot >= 10 ? `, ${int(alvo.prot)} g prot.` : ""}` : "Nada ainda";
+    return `
+      <div class="ref-cartao vazia">
+        <button class="ref-cab" data-acao="abrir-add" data-ref="${r.id}" aria-label="Adicionar em ${r.nome}">
+          ${cor}<span class="ref-nome"><b>${r.nome}</b><small>${sug}</small></span><span class="mais" aria-hidden="true">+</span>
+        </button>${textoDica}
+      </div>`;
+  }
+  const aberta = ui.refAberta === `${d}:${r.id}`;
+  return `
+    <div class="ref-cartao ${aberta ? "aberta" : ""}">
+      <button class="ref-cab" data-acao="abrir-ref" data-ref="${r.id}" aria-expanded="${aberta}">
+        ${cor}<span class="ref-nome"><b>${r.nome}</b><small>${esc(nomesItens(lista))}</small></span>
+        <span class="ref-num"><b>${int(kc)}</b><small>${int(pr)} g prot.</small></span>
+      </button>
+      ${aberta ? `<ul class="itens-ref">${lista.map(linhaItem).join("")}</ul>
+        <button class="add-item" data-acao="abrir-add" data-ref="${r.id}">+ Adicionar em ${r.nome.toLowerCase()}</button>` : ""}
+    </div>`;
+}
+
+function telaHoje() {
+  const d = ui.data, t = totais(d), m = S.metas, itens = diaDe(d).itens;
   const dica = d === hoje() ? dicaProteina() : null;
+  // o quanto cada refeição que falta deveria ter, pelo que sobra da meta
+  const sug = d === hoje() && m ? sugerirResto(d) : null;
+  const alvo = Object.fromEntries((sug?.refeicoes || []).map((r) => [r.ref, r]));
   const refs = REFEICOES.map((r) => {
     const lista = itens.filter((i) => i.ref === r.id);
-    const dicaAqui = dica && dica.ref === r.id && !lista.length
-      ? `<p class="dica-prot">${{ cafe: "Seu café da manhã", almoco: "Seu almoço", pos_treino: "Seu pós-treino", janta: "Sua janta", ceia: "Sua ceia" }[r.id]} costuma ter <b>${dica.media} g</b> de proteína.${dica.sugestao ? ` ${esc(dica.sugestao.nome)} leva a ${dica.sugestao.total} g.` : ""} <button class="link" data-acao="o-que-comer">Sugerir</button></p>` : "";
-    return `
-      <section class="ref">
-        <h2>
-          <i class="ponto" style="background:${r.cor}"></i>
-          <span class="nome">${r.nome}</span>
-          <span class="sub">${lista.length ? int(t.porRef[r.id]) + " kcal" : ""}</span>
-          <button class="mais" data-acao="abrir-add" data-ref="${r.id}" aria-label="Adicionar em ${r.nome}">+</button>
-        </h2>
-        ${lista.length ? `<ul>${lista.map(linhaItem).join("")}</ul>` : ""}${dicaAqui}
-      </section>`;
+    return cartaoRefeicao(r, lista, d, alvo[r.id], dica && dica.ref === r.id && !lista.length ? dica : null);
   }).join("");
-
-  return `${resumo}${cartaoNutri(d)}
-    <div class="comanda">
-      ${itens.length ? `<p class="colunas" aria-hidden="true"><span>kcal</span><span>prot.</span></p>` : ""}
-      ${refs}
-      ${secaoSuplementosDia(d)}
-    </div>`;
+  return `${painelDia(d, t, m)}${cartaoNutri(d)}
+    <section class="secao refeicoes"><h2>Refeições</h2>${refs}</section>
+    ${secaoSuplementosDia(d)}`;
 }
 
 function linhaItem(i) {
   const q = porcao(i);
   return `<li><button data-acao="editar" data-id="${esc(i.id)}">
     <span class="oque">${esc(i.nome)}${q ? ` <small>${esc(q)}</small>` : ""}</span>
-    <span class="pts"></span>
     <span class="kc">${int(i.kcal)}</span>
     <span class="pr">${int(i.protein)} g</span>
   </button></li>`;
+}
+
+// Selo do topo do Diário: o treino de hoje (feito ou o próximo da fila)
+function seloTreino() {
+  if (ui.data !== hoje() || !temPlano()) return "";
+  const feito = (S.treino?.sessoes || []).find((s) => s.d === hoje());
+  const nome = feito ? feito.nome : proximoDia()?.nome;
+  if (!nome) return "";
+  return `<button class="selo-topo" data-acao="aba" data-aba="treino" data-treino="inicio">${ICONE_HALTER}${feito ? "Feito: " : ""}${esc(nome.replace(/^[A-Z] · /, ""))}</button>`;
 }
 
 // ---------- folha (adicionar e editar) ----------
@@ -361,55 +396,29 @@ function explicarMetas(m, u) {
 }
 
 function telaAjustes() {
-  const u = S.user || { sexo: "m", atividade: "moderado", objetivo: "perder", ritmo: 0.5 }, m = S.metas, c = S.cfg;
+  const m = S.metas, c = S.cfg;
   const marcado = (a, b) => (a === b ? "checked" : "");
   const teste = ui.testeIA ? `<p class="resultado ${ui.testeIA.ok ? "ok" : "ruim"}">${esc(ui.testeIA.texto)}</p>` : "";
   return `
     <section class="secao">
-      <h2>Perfil</h2>
-      ${S.user ? "" : `<p class="intro">Para começar, preenche teus dados. O app calcula quantas calorias e quanta proteína comer por dia.</p>`}
-      <form data-form="perfil">
-        <label class="campo"><span>Nome ou apelido</span><input name="apelido" maxlength="30" autocomplete="nickname" value="${esc(u.apelido || "")}"></label>
-        <fieldset class="opcoes"><legend>Sexo, para a fórmula do gasto</legend>
-          <label><input type="radio" name="sexo" value="m" ${marcado(u.sexo, "m")}><span>Homem</span></label>
-          <label><input type="radio" name="sexo" value="f" ${marcado(u.sexo, "f")}><span>Mulher</span></label>
-        </fieldset>
-        <label class="campo"><span>Data de nascimento <small>${u.nascimento ? `${idadeAtual(u)} anos` : u.idade ? `hoje está ${u.idade} anos; com a data, a idade se atualiza sozinha` : "a idade se atualiza sozinha"}</small></span>
-          <input name="nascimento" type="date" max="${hoje()}" min="1900-01-01" ${u.idade ? "" : "required"} value="${esc(u.nascimento || "")}"></label>
-        <div class="grade2i">
-          <label class="campo"><span>Altura <small>cm</small></span><input name="altura" type="number" inputmode="numeric" min="120" max="230" required value="${u.altura ?? ""}"></label>
-          <label class="campo"><span>Peso <small>kg</small></span><input name="peso" type="number" inputmode="decimal" min="30" max="300" step="0.1" required value="${u.peso ?? ""}"></label>
-        </div>
-        <label class="campo"><span>Atividade</span>
-          <select name="atividade">${Object.entries(ATIVIDADE).map(([k, a]) => `<option value="${k}" ${k === u.atividade ? "selected" : ""}>${a.nome}: ${a.desc}</option>`).join("")}</select></label>
-        <label class="campo"><span>No dia a dia, você passa mais tempo</span>
-          <select name="trabalho">${Object.entries(TRABALHO).map(([k, nome]) => `<option value="${k}" ${k === (u.trabalho || "sentado") ? "selected" : ""}>${nome}</option>`).join("")}</select></label>
-        <fieldset class="opcoes"><legend>Objetivo</legend>
-          <label><input type="radio" name="objetivo" value="perder" ${marcado(u.objetivo, "perder")}><span>Perder gordura</span></label>
-          <label><input type="radio" name="objetivo" value="manter" ${marcado(u.objetivo, "manter")}><span>Manter</span></label>
-          <label><input type="radio" name="objetivo" value="ganhar" ${marcado(u.objetivo, "ganhar")}><span>Ganhar massa</span></label>
-        </fieldset>
-        <label class="campo" id="campo-ritmo" ${u.objetivo === "manter" ? "hidden" : ""}><span>Ritmo</span>
-          <select name="ritmo"><option value="auto" ${u.ritmoAuto ? "selected" : ""}>Automático (recomendado)</option>${RITMOS.map((r) => `<option value="${r}" ${!u.ritmoAuto && Number(u.ritmo) === r ? "selected" : ""}>${r.toLocaleString("pt-BR")} kg por semana</option>`).join("")}</select>
-          ${u.ritmoAuto && S.metas?.ritmoAuto ? `<small class="dica">Agora: ${S.metas.ritmoAuto.kg.toLocaleString("pt-BR")} kg por semana (${S.metas.ritmoAuto.pct.toLocaleString("pt-BR")}% do peso)${S.metas.ritmoAuto.motivos.length ? ` · ${esc(S.metas.ritmoAuto.motivos.join(" · "))}` : ""}. Ajusta sozinho a cada check-in.</small>` : `<small class="dica">No automático, o ritmo sai do seu nível de treino, da gordura e da força.</small>`}</label>
-        ${u.sexo === "f" ? `<fieldset class="ciclo"><legend>Ciclo menstrual <small>opcional: o app não confunde a água retida com gordura</small></legend>
-          <div class="grade2i">
-            <label class="campo"><span>Início da última menstruação</span><input name="cicloUltima" type="date" max="${hoje()}" value="${esc(u.ciclo?.ultima || "")}"></label>
-            <label class="campo"><span>Duração do ciclo <small>dias</small></span><input name="cicloDuracao" type="number" inputmode="numeric" min="20" max="45" value="${u.ciclo?.duracao || 28}"></label>
-          </div></fieldset>` : ""}
-        <button class="botao cheio">Salvar perfil</button>
-      </form>
+      <h2>Você</h2>
+      <ul class="linhas atalhos-ajustes">
+        <li><button data-acao="aba" data-aba="dados" data-volta="ajustes"><span><b>Dados pessoais</b><small>Nome, nascimento, altura, pesagem e atividade</small></span><span class="seta-dir" aria-hidden="true">›</span></button></li>
+        <li><button data-acao="aba" data-aba="objetivo" data-volta="ajustes"><span><b>Objetivo e ritmo</b><small>${esc({ perder: "Perder gordura", manter: "Manter", ganhar: "Ganhar massa" }[S.user?.objetivo] || "Escolher")}${S.user?.ritmoAuto ? " · ritmo automático" : ""}</small></span><span class="seta-dir" aria-hidden="true">›</span></button></li>
+      </ul>
     </section>
 
     <section class="secao">
       <h2>Metas do dia</h2>
-      ${m ? `<p class="metas"><b>${int(m.kcal)}</b> kcal e <b>${int(m.protein)}</b> g de proteína</p><p class="texto">${esc(explicarMetas(m, S.user))}</p>` : `<p class="vazio">Salva o perfil para o app calcular.</p>`}
+      <div class="caixa">
+      ${m ? `<p class="metas"><b>${int(m.kcal)}</b> kcal e <b>${int(m.protein)}</b> g de proteína</p><p class="texto">${esc(explicarMetas(m, S.user))}</p>` : `<p class="vazio">Preencha os dados pessoais para o app calcular.</p>`}
       <label class="chave-liga"><input type="checkbox" id="manuais" ${S.metasManuais ? "checked" : ""}><span>Definir as metas na mão</span></label>
       <form class="par" data-form="metas" ${S.metasManuais ? "" : "hidden"}>
         <label class="campo"><span>Calorias</span><input name="kcal" type="number" inputmode="numeric" min="800" max="8000" required value="${m?.kcal ?? ""}"></label>
         <label class="campo"><span>Proteína <small>g</small></span><input name="protein" type="number" inputmode="numeric" min="20" max="500" required value="${m?.protein ?? ""}"></label>
         <button class="botao">Salvar metas</button>
       </form>
+      </div>
     </section>
 
     ${secaoSuplementosAjustes()}
@@ -492,6 +501,11 @@ function lerFormIA(form) {
 // ---------- ações ----------
 Object.assign(ACOES, {
   "abrir-add"(b) { abrirFolha({ tipo: "add", ref: b.dataset.ref }); },
+  "abrir-ref"(b) {
+    const k = `${ui.data}:${b.dataset.ref}`;
+    ui.refAberta = ui.refAberta === k ? null : k;
+    render();
+  },
   editar(b) { abrirFolha({ tipo: "editar", id: b.dataset.id }); },
 
   "usar-fav"(b) {
@@ -645,7 +659,6 @@ MUDANCAS.push((el) => {
     arq.text().then((texto) => { ui.restaurar = { nome: arq.name, texto }; render(); });
     return true;
   }
-  if (el.name === "objetivo") { $("#campo-ritmo").hidden = el.value === "manter"; return true; }
   if (el.name === "tema") { S.cfg.tema = el.value; salvar(); aplicarTema(); return true; }
   if (el.id === "manuais") {
     S.metasManuais = el.checked;
@@ -689,20 +702,21 @@ document.addEventListener("visibilitychange", () => {
 });
 
 // ---------- início ----------
-TELAS.hoje = { comData: true, html: telaHoje };
-TELAS.ia = { comData: true, html: telaIA, depois: fimDoChat, manterRolagem: true };
+TELAS.hoje = { comData: true, html: telaHoje, direita: seloTreino };
+TELAS.ia = { comData: true, tituloDia: () => "IA", html: telaIA, depois: fimDoChat, manterRolagem: true };
 TELAS.treino = telaTreino;
 TELAS.equipe = telaEquipe;
 TELAS.ajustes = { titulo: "Ajustes", aba: "perfil", html: telaAjustes };
 
+// Primeiro de tudo: confirma ao atualizador que esta versão abriu (senão ele desfaz em 10 s e bloqueia a versão)
+iniciarAtualizador(BUILD);
 await carregar();
 aplicarTema();
-// a idade e o peso de hoje mudam a meta (aniversário, tendência nova)
-if (S.user && !S.metasManuais) aplicarMetas();
-iniciarEquipe();
-if (!S.user) ui.aba = "ajustes";
+// a idade e o peso de hoje mudam a meta (aniversário, tendência nova); um erro aqui não pode deixar a tela em branco
+try { if (S.user && !S.metasManuais) aplicarMetas(); } catch (e) { console.warn("Metas:", e); }
+try { iniciarEquipe(); } catch (e) { console.warn("Equipe:", e); }
+if (!S.user) ui.aba = "dados";
 render();
-iniciarAtualizador(BUILD);
 // lembretes: reagenda com os horários atuais e abre a tela certa ao tocar
 ouvirLembretes((x) => {
   ui.aba = x.aba; if (x.sub) ui.equipe = x.sub;

@@ -114,7 +114,7 @@ function vistaComPontos(vista, usadas, sel) {
 }
 
 function telaDobras() {
-  if (!S.user) return `<section class="secao"><button class="botao cheio" data-acao="aba" data-aba="ajustes">Preencher perfil</button></section>`;
+  if (!S.user) return `<section class="secao"><button class="botao cheio" data-acao="aba" data-aba="dados">Preencher os dados</button></section>`;
   const h = hoje(), usadas = dobrasUsadas(), hj = S.dias[h]?.dobras || {}, ult = dobrasAte(h);
   const ant = ult && ult.d !== h ? ult.dobras : null, sel = ui.dobra || usadas[0].id;
   // resultado de hoje, ou o da última vez que as dobras foram feitas
@@ -129,7 +129,7 @@ function telaDobras() {
       <button role="radio" data-acao="protocolo-dobras" data-n="7" aria-selected="${!S.cfg.dobras3}">7 dobras · completo</button>
     </div>
     <div class="palco-dobras">${vistaComPontos("front", usadas, sel)}${vistaComPontos("back", usadas, sel)}</div>
-    <p class="dica">Com adipômetro, no lado direito do corpo. A camada clara do avatar segue cada dobra.</p>
+    <p class="dica">A camada clara do avatar segue cada dobra.</p>
     <form data-form="dobras" class="lista-dobras">
       ${usadas.map((x, i) => `<label class="linha-dobra ${x.id === sel ? "on" : ""}">
         <span class="num">${i + 1}</span>
@@ -217,7 +217,6 @@ function telaDores() {
   const evita = P[6] && n > 0 ? LESOES[P[6]].evita.map(nomeEx) : [];
   const chip = sit === "ativa" ? "ativa" : sit === "melhorando" ? "melhorando" : sit === "resolvida" ? "resolvida" : "";
   return `
-    <p class="legenda medidas-topo"><span>${total ? `${total} ${total === 1 ? "marcada" : "marcadas"} · ${ativas} ${ativas === 1 ? "ativa" : "ativas"}` : "Toque numa articulação ou região"}</span></p>
     <div class="segmentos" role="radiogroup" aria-label="Vista">
       <button role="radio" data-acao="vista-dores" data-v="front" aria-selected="${vista === "front"}">Frente</button>
       <button role="radio" data-acao="vista-dores" data-v="back" aria-selected="${vista === "back"}">Costas</button>
@@ -329,11 +328,15 @@ function secaoAvaliacao() {
 SECOES_PERFIL.push(secaoAvaliacao);
 
 // ---------- registro ----------
-TELAS.avaliacao = { titulo: "Dia de avaliação", aba: "perfil", html: telaAvaliacao, depois: () => hidratarFotos($("#tela")) };
-TELAS.dobras = { titulo: "Dobras cutâneas", aba: "perfil", html: telaDobras };
-TELAS.simetria = { titulo: "Simetria", aba: "perfil", html: telaSimetria };
-TELAS.dores = { titulo: "Dores e lesões", aba: "perfil", html: telaDores };
-TELAS.saude = { titulo: "Saúde", aba: "perfil", html: telaSaude };
+const numAvaliacao = () => Object.keys(S.dias).filter((d) => d < hoje() && (S.dias[d].med || S.dias[d].dobras)).length + 1;
+TELAS.avaliacao = { titulo: "Dia de avaliação", sub: () => `${numAvaliacao()}ª avaliação · a cada 4 semanas`, aba: "perfil", html: telaAvaliacao, depois: () => hidratarFotos($("#tela")) };
+TELAS.dobras = { titulo: "Dobras cutâneas", sub: "Com adipômetro · lado direito do corpo", aba: "perfil", html: telaDobras };
+TELAS.simetria = { titulo: "Simetria", sub: () => { const d = Object.keys(S.dias).filter((x) => S.dias[x].med && Object.keys(S.dias[x].med).some((k) => k.endsWith("_esq"))).sort().pop(); return `Lado direito × lado esquerdo${d ? ` · ${dataCurta(d)}` : ""}`; }, aba: "perfil", html: telaSimetria };
+TELAS.dores = {
+  titulo: "Dores e lesões", aba: "perfil", html: telaDores,
+  sub: () => { const ids = Object.keys(S.corpo.dores), ativas = ids.filter((id) => nivelDor(id) > 0).length; return ids.length ? `${ids.length} ${ids.length === 1 ? "marcada" : "marcadas"} · ${ativas} ${ativas === 1 ? "ativa" : "ativas"}` : "Toque numa articulação ou região"; },
+};
+TELAS.saude = { titulo: "Saúde e conexões", sub: "O que vem de fora do app", aba: "perfil", html: telaSaude };
 
 const diaAvaliacao = () => { const dia = diaDe(hoje(), true); dia.avaliacao ||= { condicoes: {} }; return dia.avaliacao; };
 Object.assign(ACOES, {

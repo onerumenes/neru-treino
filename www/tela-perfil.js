@@ -1,7 +1,7 @@
 // Aba Perfil: a ficha do corpo como uma ficha de personagem (avatar, dados, motor, composição, medidas e
 // fotos), a tela de medidas com a fita sobre o avatar e a linha do tempo entre as medições.
 
-import { S, hoje, pesos, MEDIDAS, LADOS, medicoes, medidasAte, salvar } from "./store.js";
+import { S, hoje, pesos, paraData, MEDIDAS, LADOS, medicoes, medidasAte, salvar } from "./store.js";
 import { $, esc, int, dec, lerNum, dataCurta, ui, TELAS, ACOES, FORMS, MUDANCAS, ICONE, render, avisar } from "./base.js";
 import { ATIVIDADE, TRABALHO, calcMetas, idadeAtual } from "./metas.js";
 import { tendencia, gastoEstimado } from "./nutri.js";
@@ -9,7 +9,11 @@ import { composicao, registrarMedidas, sessoesDeFotos, dobrasAte, NOME_METODO } 
 import { carregarCorpo, montarCorpo, svgCorpo, REF, MEDIDA_DO_MUSCULO } from "./avatar.js";
 import { hidratarFotos } from "./tela-equipe.js";
 
+const ICONE_LAPIS = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>`;
+const ICONE_HALTER = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10v4M6 7v10M18 7v10M21 10v4M6 12h12"/></svg>`;
+const ICONE_CADEADO = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>`;
 const sinal = (n) => (n > 0 ? "+" : n < 0 ? "−" : "");
+const um = (n) => Number(n).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const OBJETIVOS = { perder: "Perder gordura", manter: "Manter", ganhar: "Ganhar massa" };
 // Outros módulos penduram seções no perfil (a avaliação corporal, por exemplo): fn() devolve HTML
 export const SECOES_PERFIL = [];
@@ -124,11 +128,11 @@ function heroi() {
   const avatar = comCorpo()
     ? svgCorpo(desenhar("front"), { sombra: true, rotulo: "Seu corpo desenhado com as suas medidas" })
     : CARREGANDO;
-  const sub = [idade ? `${idade} anos` : "", u.altura ? `${(u.altura / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m` : "", u.sexo === "f" ? "Mulher" : "Homem"].filter(Boolean).join(" · ");
+  const sub = [idade ? `${idade} anos` : "", u.altura ? `${(u.altura / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m` : "", u.sexo === "f" ? "Feminino" : "Masculino"].filter(Boolean).join(" · ");
   return `
     <section class="heroi">
       <div class="heroi-chips">
-        <span class="chip escuro">${esc(OBJETIVOS[u.objetivo] || "Objetivo")}</span>
+        <button class="chip escuro" data-acao="aba" data-aba="objetivo" data-volta="perfil">${esc(OBJETIVOS[u.objetivo] || "Objetivo")}</button>
         ${dias ? `<span class="chip">Jornada · dia ${int(dias)}</span>` : ""}
       </div>
       <button class="heroi-corpo" data-acao="aba" data-aba="medidas" aria-label="Abrir as medidas no corpo">
@@ -140,8 +144,9 @@ function heroi() {
       <p class="heroi-sub">${esc(sub)}</p>
       <div class="par botoes">
         <button class="botao escuro" data-acao="aba" data-aba="medidas">${ICONE.fita}Medir</button>
-        <button class="botao claro" data-acao="aba" data-aba="linha">Linha do tempo</button>
+        <button class="botao claro" data-acao="aba" data-aba="corpotreino" data-volta="perfil">${ICONE_HALTER}Treino no corpo</button>
       </div>
+      <button class="link-heroi" data-acao="aba" data-aba="linha">Ver a linha do tempo do corpo</button>
     </section>`;
 }
 
@@ -167,7 +172,7 @@ function secaoFicha() {
       <div class="cartao largo">
         <div><span>Peso (tendência)</span><b>${atual ? `${dec(atual.kg)} kg` : `${dec(u.peso)} kg`}</b>
           ${delta != null ? `<small class="${delta < 0 ? "desceu" : delta > 0 ? "subiu" : ""}">${sinal(delta)}${dec(Math.abs(delta))} kg na semana</small>` : `<small>pese-se de 3 a 7 vezes por semana</small>`}</div>
-        ${linha}
+        <div class="peso-lado">${linha}<small>${ps.length > 1 ? `${Math.max(1, Math.round((paraData(ps[ps.length - 1].d) - paraData(ps[0].d)) / 6048e5))} semanas · ${dec(Math.min(7, (ps.length / Math.max(1, (paraData(ps[ps.length - 1].d) - paraData(ps[0].d)) / 6048e5))))} pesagens/sem` : ""}</small></div>
       </div>
     </section>`;
 }
@@ -182,7 +187,7 @@ function secaoMotor() {
     <section class="secao">
       <h2>Motor</h2>
       <ul class="linhas">
-        <li><span><b>Metabolismo basal</b><small>Com o peso e a idade de hoje</small></span><b>${base ? `${int(base.tmb)} kcal` : "–"}</b></li>
+        <li><span><b>Metabolismo basal</b><small>Com o peso e a idade de hoje</small></span><span class="valor-dir"><b>${base ? `${int(base.tmb)} kcal` : "–"}</b>${m?.magra ? `<small>pela massa magra: ${int(370 + 21.6 * m.magra)}</small>` : ""}</span></li>
         <li class="com-etapas"><span><b>Gasto diário</b><small>${esc(desc)}</small></span><b>${ge ? `${int(ge.kcal)} kcal` : "–"}</b>
           <span class="etapas">${["declarado", "estimado", "medido"].map((e) => `<i class="${e === etapa ? "on" : ""}">${{ declarado: "Declarado", estimado: "Estimado", medido: "Medido" }[e]}</i>`).join("")}</span></li>
         <li><span><b>Atividade</b><small>${atv.fonte === "estimado" ? `${dec(atv.treinos)} treinos${atv.cardioMin ? ` e ${int(atv.cardioMin)} min de cardio` : ""} por semana nas últimas 4` : esc(at ? at.desc : "")}${u.trabalho ? ` · trabalho ${esc(TRABALHO[u.trabalho].toLowerCase())}` : ""}</small></span><b>${atv.fonte === "estimado" ? "Pelos treinos" : esc(at?.nome || "–")}</b></li>
@@ -209,7 +214,7 @@ function secaoComposicao() {
       <h2>Composição</h2>
       <div class="cartoes2">
         <div class="cartao"><span>Gordura</span><b>${dec(z.bf)}%</b><small>${esc(NOME_METODO[z.metodo] || "")}${z.calibrada ? " · calibrada" : ""}${varia ? ` · ${sinal(z.bf - a.bf)}${dec(Math.abs(z.bf - a.bf))} pts desde ${dataCurta(inicio.d)}` : ""}</small></div>
-        <div class="cartao"><span>Massa magra</span><b>${dec(z.magra)} kg</b><small>${varia ? `${sinal(z.magra - a.magra)}${dec(Math.abs(z.magra - a.magra))} kg desde ${dataCurta(inicio.d)}` : `gordura: ${dec(z.gorda)} kg`}</small></div>
+        <div class="cartao"><span>Magra</span><b>${dec(z.magra)} kg</b><small class="${varia && z.magra > a.magra ? "desceu" : ""}">${varia ? `${sinal(z.magra - a.magra)}${dec(Math.abs(z.magra - a.magra))} desde ${dataCurta(inicio.d)}` : `gordura: ${dec(z.gorda)} kg`}</small></div>
       </div>
     </section>`;
 }
@@ -217,16 +222,18 @@ function secaoComposicao() {
 function secaoMedidasResumo() {
   const ms = medidasAte(), todas = medicoes();
   const primeira = (id) => todas.find((x) => x[id] > 0);
-  const linhas = MEDIDAS.filter((x) => ms[x.id]).map((x) => {
+  const linhas = MEDIDAS.map((x) => {
+    if (!ms[x.id]) return `<li><span>${esc(x.nome)}</span><span class="valor"><small class="falta">faltando</small><b>—</b></span></li>`;
     const p = primeira(x.id), dif = p && p.d !== ms[x.id].d ? ms[x.id].v - p[x.id] : 0;
-    return `<li><span>${esc(x.nome)}</span><span class="valor">${dif ? `<small>${sinal(dif)}${dec(Math.abs(dif))}</small>` : ""}<b>${dec(ms[x.id].v)} cm</b></span></li>`;
+    // cintura e quadril descendo é bom; o resto subindo é músculo
+    const bom = dif && ((x.id === "cintura" || x.id === "quadril") ? dif < 0 : dif > 0);
+    return `<li><span>${esc(x.nome)}</span><span class="valor">${dif ? `<small class="${bom ? "bom" : ""}">${sinal(dif)}${um(Math.abs(dif))}</small>` : ""}<b>${um(ms[x.id].v)} cm</b></span></li>`;
   });
-  const faltam = MEDIDAS.length - linhas.length;
+  const feitas = MEDIDAS.filter((x) => ms[x.id]).length;
   return `
     <section class="secao">
-      <div class="titulo-linha"><h2>Medidas</h2><button class="link" data-acao="aba" data-aba="medidas">${linhas.length ? "Medir" : "Começar"}</button></div>
-      ${linhas.length ? `<ul class="linhas">${linhas.join("")}</ul>` : `<p class="vazio">Com fita métrica, a cada 2 a 4 semanas. O avatar segue cada medida.</p>`}
-      ${linhas.length && faltam ? `<p class="dica">Faltam ${faltam} ${faltam === 1 ? "medida" : "medidas"} para o avatar ficar completo.</p>` : ""}
+      <div class="titulo-linha"><h2>Medidas</h2><button class="link" data-acao="aba" data-aba="medidas">${feitas ? `Ver as ${MEDIDAS.length}` : "Começar"}</button></div>
+      ${feitas ? `<ul class="linhas medidas-resumo">${linhas.join("")}</ul>` : `<p class="vazio">Com fita métrica, a cada 2 a 4 semanas. O avatar segue cada medida.</p>`}
     </section>`;
 }
 
@@ -235,20 +242,21 @@ function secaoFotosResumo() {
   const poses = [["frente", "Frente"], ["lado", "Lado"], ["costas", "Costas"]];
   return `
     <section class="secao">
-      <div class="titulo-linha"><h2>Fotos</h2><button class="link" data-acao="sub-equipe-corpo">Comparar</button></div>
-      <button class="fotos-perfil" data-acao="ver-fotos" data-d="${s ? s.d : hoje()}" aria-label="${s ? `Abrir as fotos de ${dataCurta(s.d)}` : "Tirar as fotos de hoje"}">
-        ${poses.map(([p, nome]) => `<span>${s?.poses[p] ? `<img data-foto="${esc(s.poses[p])}" alt="">` : "<i></i>"}<small>${nome}${s ? ` · ${dataCurta(s.d)}` : ""}</small></span>`).join("")}
-      </button>
-      <p class="dica">As fotos ficam só neste aparelho.</p>
+      <div class="titulo-linha"><h2>Fotos</h2><button class="link" data-acao="aba" data-aba="fotos">${s ? "Comparar" : "Tirar"}</button></div>
+      <div class="fotos-perfil">
+        ${poses.map(([p, nome]) => `<button class="foto-tile" data-acao="aba" data-aba="fotos" data-pose="${p}">${s?.poses[p] ? `<img data-foto="${esc(s.poses[p])}" alt="">` : ""}<span><b>${nome}</b><small>${s ? dataCurta(s.d) : "sem foto"}</small></span></button>`).join("")}
+      </div>
+      <p class="dica com-icone">${ICONE_CADEADO}As fotos ficam só no aparelho</p>
     </section>`;
 }
 
 function telaPerfil() {
   if (!S.user) {
     return `<section class="secao"><p class="intro">Preencha seus dados para montar o seu perfil e o seu avatar.</p>
-      <button class="botao cheio" data-acao="aba" data-aba="ajustes">Preencher perfil</button></section>`;
+      <button class="botao cheio" data-acao="aba" data-aba="dados">Preencher os dados</button></section>`;
   }
-  return heroi() + secaoFicha() + secaoMotor() + secaoComposicao() + SECOES_PERFIL.map((fn) => fn()).join("") + secaoMedidasResumo() + secaoFotosResumo();
+  return heroi() + secaoFicha() + secaoMotor() + secaoComposicao() + SECOES_PERFIL.map((fn) => fn()).join("") + secaoMedidasResumo() + secaoFotosResumo()
+    + `<section class="secao"><button class="botao fraco cheio" data-acao="aba" data-aba="ajustes" data-volta="perfil">${ICONE.ajustes}Ajustes do app</button></section>`;
 }
 
 // ---------- medidas no avatar ----------
@@ -269,14 +277,13 @@ function avatarMedidas(sel, digitado) {
 }
 
 function telaMedidas() {
-  if (!S.user) return `<section class="secao"><button class="botao cheio" data-acao="aba" data-aba="ajustes">Preencher perfil</button></section>`;
+  if (!S.user) return `<section class="secao"><button class="botao cheio" data-acao="aba" data-aba="dados">Preencher os dados</button></section>`;
   const lista = listaMedidas(), sel = medidaSelecionada(), ms = medidasAte(), sm = lista.find((x) => x.id === sel);
   const hj = valorHoje(sel), ant = medicoes().filter((x) => x.d < hoje() && x[sel] > 0).pop();
   const feitas = lista.filter((x) => valorHoje(x.id)).length;
   let comparar = ant ? `Última: ${dec(ant[sel])} cm em ${dataCurta(ant.d)}` : "Primeira vez nesta medida";
   if (hj && ant) { const d = hj - ant[sel]; comparar = d ? `${sinal(d)}${dec(Math.abs(d))} cm desde ${dataCurta(ant.d)}` : `Igual a ${dataCurta(ant.d)}`; }
   return `
-    <p class="legenda medidas-topo"><span>${feitas} de ${lista.length} medidas hoje · toque numa medida</span></p>
     <div class="palco-medidas">
       <div class="palco-corpo" id="avatar-medidas">${avatarMedidas(sel)}</div>
       <ul class="lista-medidas">
@@ -338,8 +345,9 @@ function conteudoLinha(pts, pos) {
   };
   return {
     avatar: comCorpo() ? svgCorpo(montarCorpo(corpo[sexo()].front, sexo(), paraVista(p.m, "front"), p.ajuste ? { ajusteGordura: p.ajuste } : {}), { sombra: true, rotulo: `Corpo em ${dataCurta(p.d)}` }) : CARREGANDO,
-    data: dataCurta(p.d),
-    info: `${p.peso != null ? `${dec(p.peso)} kg · ` : ""}${dec(p.m.bf)}% de gordura`,
+    data: dataCurta(p.d), d: p.d,
+    peso: p.peso != null ? `${dec(p.peso)} kg` : "",
+    bf: `${dec(p.m.bf)}%`,
     deltas: [
       ["Peso", p.peso != null && a.peso != null ? `${sinal(p.peso - a.peso)}${dec(Math.abs(p.peso - a.peso))} kg` : "–"],
       ["Gordura", `${dif("bf", " pts")}`], ["Cintura", dif("cintura", " cm")], ["Ombros", dif("ombros", " cm")],
@@ -347,28 +355,40 @@ function conteudoLinha(pts, pos) {
     ],
   };
 }
+function fotosDaData(d) {
+  const s = sessoesDeFotos().find((x) => x.d === d);
+  const poses = [["frente", "Frente"], ["lado", "Lado"], ["costas", "Costas"]];
+  return `<span class="titulo-fotos">Fotos de ${dataCurta(d)}</span>
+    <div class="fotos-perfil">${poses.map(([p, nome]) => `<button class="foto-tile pequena" data-acao="aba" data-aba="fotos" data-volta="linha">${s?.poses[p] ? `<img data-foto="${esc(s.poses[p])}" alt="">` : ""}<span><b>${nome}</b>${s?.poses[p] ? "" : "<small>sem foto</small>"}</span></button>`).join("")}</div>`;
+}
+const deltasHtml = (c) => c.deltas.map(([n, v]) => `<div><span>${n}</span><b>${esc(v)}</b></div>`).join("");
+
 function telaLinha() {
   const pts = pontosDaLinha();
   if (pts.length < 2) {
-    return `<section class="secao"><p class="vazio">A linha do tempo aparece a partir da segunda medição. Ela transforma o avatar de uma data para a outra.</p>
-      <button class="botao cheio" data-acao="aba" data-aba="medidas">Medir agora</button></section>`;
+    return `<section class="caixa"><p class="vazio">A linha do tempo aparece a partir da segunda medição. Ela transforma o avatar de uma data para a outra.</p>
+      <button class="botao escuro cheio" data-acao="aba" data-aba="medidas">Medir agora</button></section>`;
   }
   const max = (pts.length - 1) * 10, pos = Math.min(max, ui.linhaPos ?? max), c = conteudoLinha(pts, pos);
+  // marcas de mês embaixo da barra: até 5, espalhadas entre a primeira e a última medição
+  const marcas = [0, 0.25, 0.5, 0.75, 1].map((f) => paraData(pts[Math.round(f * (pts.length - 1))].d).toLocaleDateString("pt-BR", { month: "short" }).replace(".", ""));
   return `
-    <section class="heroi linha">
-      <div class="heroi-chips"><span class="chip escuro" id="linha-data">${esc(c.data)}</span><span class="chip" id="linha-info">${esc(c.info)}</span></div>
-      <div class="heroi-corpo" id="linha-avatar">${c.avatar}</div>
+    <section class="palco-linha">
+      <div class="linha-corpo" id="linha-avatar">${c.avatar}</div>
+      <div class="selo-data"><span>Avaliação</span><b id="linha-data">${esc(c.data)}</b></div>
+      <div class="selos-dir"><span id="linha-peso" ${c.peso ? "" : "hidden"}><b>${esc(c.peso)}</b></span><span><b id="linha-bf">${esc(c.bf)}</b> gordura</span></div>
     </section>
-    <div class="linha-controle">
-      <button class="redondo escuro" data-acao="linha-tocar" aria-label="Tocar a evolução">${ICONE.depois}</button>
-      <label class="cheio"><span class="so-leitor">Data da medição</span>
-        <input id="linha-pos" type="range" min="0" max="${max}" step="1" value="${pos}"></label>
-    </div>
-    <p class="legenda pontas"><span>${dataCurta(pts[0].d)}</span><span>${dataCurta(pts[pts.length - 1].d)}</span></p>
-    <section class="secao">
+    <section class="caixa controle-linha">
+      <button class="tocar" data-acao="linha-tocar" aria-label="Tocar a evolução"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg></button>
+      <label><span class="so-leitor">Data da avaliação</span>
+        <input id="linha-pos" type="range" min="0" max="${max}" step="1" value="${pos}">
+        <span class="meses">${marcas.map((m) => `<span>${esc(m)}</span>`).join("")}</span></label>
+    </section>
+    <section class="caixa">
       <h2>Desde ${esc(dataCurta(pts[0].d))}</h2>
-      <div class="cartoes3" id="linha-deltas">${c.deltas.map(([n, v]) => `<div class="cartao"><span>${n}</span><b>${esc(v)}</b></div>`).join("")}</div>
-    </section>`;
+      <div class="deltas" id="linha-deltas">${deltasHtml(c)}</div>
+    </section>
+    <section class="fotos-linha" id="linha-fotos">${fotosDaData(c.d)}</section>`;
 }
 function atualizarLinha(pos) {
   const pts = pontosDaLinha();
@@ -377,17 +397,31 @@ function atualizarLinha(pos) {
   const c = conteudoLinha(pts, pos);
   $("#linha-avatar").innerHTML = c.avatar;
   $("#linha-data").textContent = c.data;
-  $("#linha-info").textContent = c.info;
-  $("#linha-deltas").innerHTML = c.deltas.map(([n, v]) => `<div class="cartao"><span>${n}</span><b>${esc(v)}</b></div>`).join("");
+  $("#linha-bf").textContent = c.bf;
+  const p = $("#linha-peso"); p.hidden = !c.peso; p.innerHTML = `<b>${esc(c.peso)}</b>`;
+  $("#linha-deltas").innerHTML = deltasHtml(c);
+  const f = $("#linha-fotos");
+  if (f.dataset.d !== c.d) { f.dataset.d = c.d; f.innerHTML = fotosDaData(c.d); hidratarFotos(f); }
+}
+
+function subMedidas() {
+  const lista = listaMedidas();
+  return `${lista.filter((x) => valorHoje(x.id)).length} de ${lista.length} · toque numa medida`;
+}
+function subLinha() {
+  const pts = pontosDaLinha();
+  if (pts.length < 2) return "";
+  const mes = paraData(pts[0].d).toLocaleDateString("pt-BR", { month: "long" });
+  return `${pts.length} avaliações desde ${mes}`;
 }
 
 // ---------- registro ----------
 TELAS.perfil = {
   titulo: "Perfil", html: telaPerfil, depois: () => hidratarFotos($("#tela")),
-  botao: { acao: "aba", aba: "ajustes", rotulo: "Ajustes", icone: ICONE.ajustes },
+  botao: { acao: "aba", aba: "dados", rotulo: "Editar dados pessoais", icone: ICONE_LAPIS },
 };
-TELAS.medidas = { titulo: "Medidas", aba: "perfil", html: telaMedidas };
-TELAS.linha = { titulo: "Linha do tempo", aba: "perfil", html: telaLinha };
+TELAS.medidas = { titulo: "Medidas", aba: "perfil", html: telaMedidas, sub: subMedidas, direita: () => `<span class="chip data">${esc(dataCurta(hoje()))}</span>` };
+TELAS.linha = { titulo: "Linha do tempo", aba: "perfil", html: telaLinha, sub: subLinha, depois: () => hidratarFotos($("#tela")) };
 
 let tocando = null;
 Object.assign(ACOES, {

@@ -58,22 +58,48 @@ export function irParaDia(d) {
 // ---------- moldura ----------
 function topo() {
   const el = $("#topo"), tela = TELAS[ui.aba];
+  const titulo = typeof tela.titulo === "function" ? tela.titulo() : tela.titulo;
+  const sub = typeof tela.sub === "function" ? tela.sub() : tela.sub;
+  const b = tela.botao, direita = typeof tela.direita === "function" ? tela.direita() : "";
+  const botao = b ? `<button class="redondo" data-acao="${b.acao}" ${b.aba ? `data-aba="${b.aba}"` : ""} aria-label="${esc(b.rotulo)}">${b.icone}</button>` : "";
   if (tela.comData) {
-    const [a, b] = rotuloDia(ui.data);
+    // aba com dia: a data pequena (com setas para trocar de dia), o nome do dia grande e um selo à direita
+    const [a, d] = rotuloDia(ui.data);
+    const longa = paraData(ui.data).toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "short" }).replace(".", "");
+    el.className = "principal";
     el.innerHTML = `
-      <button class="seta" data-acao="dia" data-n="-1" aria-label="Dia anterior">${ICONE.antes}</button>
-      <button class="dia" data-acao="dia-hoje" aria-label="${a}, ${b}. Voltar para hoje"><strong>${a}</strong><span>${b}</span></button>
-      <button class="seta" data-acao="dia" data-n="1" aria-label="Próximo dia" ${ui.data >= hoje() ? "disabled" : ""}>${ICONE.depois}</button>`;
-  } else {
-    // tela de dentro de outra aba (tela.aba) ganha o botão de voltar; tela.botao põe uma ação à direita
-    // volta para a tela de onde veio (ui.volta), senão para a aba dona dela
-    const alvo = ui.volta && ui.volta !== ui.aba && TELAS[ui.volta] ? ui.volta : tela.aba && tela.aba !== ui.aba ? tela.aba : null;
-    const pai = alvo ? TELAS[alvo] : null;
-    const voltar = pai ? `<button class="seta" data-acao="aba" data-aba="${alvo}" aria-label="Voltar para ${esc(pai.titulo)}">${ICONE.antes}</button>` : "";
-    const b = tela.botao;
-    const direita = b ? `<button class="icone-topo" data-acao="${b.acao}" ${b.aba ? `data-aba="${b.aba}"` : ""} aria-label="${esc(b.rotulo)}">${b.icone}</button>` : "";
-    el.innerHTML = `${voltar}<h1>${esc(typeof tela.titulo === "function" ? tela.titulo() : tela.titulo)}</h1>${direita}`;
+      <div class="titulo-dia">
+        <span class="data-pequena">
+          <button data-acao="dia" data-n="-1" aria-label="Dia anterior">${ICONE.antes}</button>
+          <button data-acao="dia-hoje" aria-label="${a}, ${d}. Voltar para hoje">${esc(longa)}</button>
+          <button data-acao="dia" data-n="1" aria-label="Próximo dia" ${ui.data >= hoje() ? "disabled" : ""}>${ICONE.depois}</button>
+        </span>
+        <h1>${esc(tela.tituloDia ? tela.tituloDia(a) : a)}</h1>
+      </div>${direita}${botao}`;
+    return;
   }
+  // tela de dentro de outra aba (tela.aba) ganha o botão redondo de voltar: para a tela de onde veio (ui.volta),
+  // senão para a aba dona dela; as abas principais têm o título grande
+  const alvo = ui.volta && ui.volta !== ui.aba && TELAS[ui.volta] ? ui.volta : tela.aba && tela.aba !== ui.aba ? tela.aba : null;
+  // a própria tela pode pedir um voltar (o treino em andamento, o editor do plano)
+  const proprio = !alvo && typeof tela.voltar === "function" ? tela.voltar() : null;
+  if (proprio) {
+    el.className = "interna";
+    el.innerHTML = `
+      <button class="redondo" data-acao="${proprio.acao || "aba"}" ${proprio.aba ? `data-aba="${proprio.aba}"` : ""} aria-label="${esc(proprio.rotulo)}">${ICONE.antes}</button>
+      <div class="titulo-interno"><h1>${esc(titulo)}</h1>${sub ? `<span>${esc(sub)}</span>` : ""}</div>${direita}${botao}`;
+    return;
+  }
+  if (!alvo) {
+    el.className = "principal";
+    el.innerHTML = `<h1>${esc(titulo)}</h1>${direita}${botao}`;
+    return;
+  }
+  const pai = TELAS[alvo], nomePai = typeof pai.titulo === "function" ? pai.titulo() : pai.titulo;
+  el.className = "interna";
+  el.innerHTML = `
+    <button class="redondo" data-acao="aba" data-aba="${alvo}" aria-label="Voltar para ${esc(nomePai || "a tela anterior")}">${ICONE.antes}</button>
+    <div class="titulo-interno"><h1>${esc(titulo)}</h1>${sub ? `<span>${esc(sub)}</span>` : ""}</div>${direita}${botao}`;
 }
 
 export function render() {

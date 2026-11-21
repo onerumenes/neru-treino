@@ -37,6 +37,8 @@ inventar valores. Por isso o modelo pequeno do celular dá conta.
 | `www/equipe-ia.js` | Os textos que a IA escreve sobre os números (sugestão, check-in, retorno, fotos) |
 | `www/lembretes.js` | Notificações de refeição, pesagem, check-in e treino |
 | `www/tela-perfil.js` | Aba Perfil: ficha do corpo com o avatar, medidas com a fita sobre o corpo e a linha do tempo |
+| `www/tela-dados.js` | Dados pessoais (o lápis do Perfil, e o primeiro uso) e Objetivo e ritmo |
+| `www/tela-fotos.js` | Fotos do físico: a mesma pose lado a lado, a análise pela IA e as próximas fotos |
 | `www/tela-avaliacao.js` | Avaliação corporal: dia de avaliação, dobras cutâneas, simetria, mapa de dores e saúde |
 | `www/musculos.js` | Carga por músculo: séries efetivas (perto da falha vale mais, composto conta meia série nos que ajudam), recuperação, força, sinais da semana leve e sugestões de volume |
 | `www/tela-treino-corpo.js` | Treino no corpo: o avatar pintado por estímulo, recuperação ou força |

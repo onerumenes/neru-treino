@@ -87,32 +87,24 @@ function telaCorpoTreino() {
     });
   }
 
-  const dispensadas = S.personal.sugestoesDispensadas || {};
-  const sugs = modo === "estimulo" ? sugestoesVolume().filter((x) => !dispensadas[`${x.g}:${x.delta}`]) : [];
   return `
     <div class="segmentos" role="tablist">${Object.entries(MODOS).map(([id, x]) =>
       `<button role="tab" data-acao="modo-corpo" data-m="${id}" aria-selected="${id === modo}">${x.nome}</button>`).join("")}</div>
     <div class="palco-treino">${vistas}</div>
     <div class="legenda-cores">${M.legenda.map((nome, i) => (nome ? `<span>${ponto(i)}${nome}</span>` : "")).join("")}</div>
     <p class="dica">${esc(M.nota())}</p>
-    ${sugs.length ? `<section class="sugestoes-volume">
-      <h2>O personal sugere</h2>
-      ${sugs.map((x) => `<div class="sugestao-volume">
-        <span class="sinal ${x.delta > 0 ? "mais" : "menos"}">${x.delta > 0 ? "+" : "−"}${Math.abs(x.delta)}</span>
-        <span class="texto-sug"><b>${esc(GRUPOS[x.g])}: ${x.delta > 0 ? "+" : "−"}${Math.abs(x.delta)} séries</b><small>${esc(x.motivo)}</small></span>
-        <span class="acoes-sug"><button class="botao" data-acao="aplicar-volume" data-g="${x.g}" data-n="${x.delta}">Aplicar</button>
-          <button class="link fraco" data-acao="dispensar-volume" data-g="${x.g}" data-n="${x.delta}">Agora não</button></span>
-      </div>`).join("")}
-    </section>` : ""}
     <section class="secao">
-      ${linhas.length ? `<ul class="musculos-lista">${linhas.map((l) => `<li>
+      ${linhas.length ? `<ul class="musculos-lista caixa">${linhas.map((l) => `<li>
         <div class="cab-musculo"><span>${l.ponto}<b>${esc(GRUPOS[l.g])}</b></span><b>${l.valor}</b></div>
         ${l.barra}${l.origem ? `<small>${esc(l.origem)}</small>` : ""}</li>`).join("")}</ul>`
       : `<p class="vazio">${modo === "forca" ? "A força aparece quando o mesmo exercício se repete em 4 semanas." : "Os músculos aparecem aqui depois dos primeiros treinos."}</p>`}
     </section>`;
 }
 
-TELAS.corpotreino = { titulo: "Treino no corpo", aba: "treino", html: telaCorpoTreino };
+TELAS.corpotreino = {
+  titulo: "Treino no corpo", aba: "treino", html: telaCorpoTreino,
+  sub: () => { const f = S.personal.avaliacao?.foco; return f ? `Foco em ${{ forca: "força", hipertrofia: "hipertrofia", ambos: "força e hipertrofia" }[f] || f} · últimos 7 dias` : "Últimos 7 dias"; },
+};
 
 Object.assign(ACOES, {
   "modo-corpo"(b) { ui.modoCorpo = b.dataset.m; render(); },
