@@ -20,7 +20,7 @@ const MODOS = {
   estimulo: {
     nome: "Estímulo", cores: ["#D8C8B0", "#F7CF6B", "#E07A2C", "#8E3B12"],
     legenda: ["Sem treino", "Abaixo da faixa", "Na faixa", "Acima da faixa"],
-    nota: () => `Séries efetivas nos últimos 7 dias. Série perto da falha vale 1, longe dela vale menos, e sem RIR anotado conta como 2. Exercício composto conta meia série nos músculos que ajudam. Faixa: ${descreverFaixas()}.`,
+    nota: () => `Séries efetivas nos últimos 7 dias. Série com até 3 repetições sobrando vale 1; mais longe da falha vale menos. Exercício composto conta parte da série nos músculos que ajudam. Faixa: ${descreverFaixas()}.`,
   },
   recuperacao: {
     nome: "Recuperação", cores: ["#D8C8B0", "#D9622B", "#F5B82E", "#3A78B8"],

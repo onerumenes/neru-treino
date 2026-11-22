@@ -1,77 +1,174 @@
-// Telas do treino: início (próximo treino e histórico), sessão em andamento e editor do plano.
+// Telas do treino: início (semana, próximo treino, outros dias, personal, cardio, progresso e últimos treinos),
+// sessão em andamento e editor do plano. Progresso, histórico, resumo e cardio ficam em tela-progresso.js.
 
-import { S, salvar, hoje } from "./store.js";
+import { S, salvar, hoje, somaDias, paraData } from "./store.js";
 import { $, esc, int, lerNum, dataCurta, ui, ACOES, FORMS, FOLHAS, MUDANCAS, ICONE, render, avisar, abrirFolha, fecharFolha } from "./base.js";
 import {
   T, GRUPOS, temPlano, usarModelo, nomeEx, biblioteca, criarExercicio, diaDoPlano, addDia, mover,
   sugerir, resumoSeries, fmtKg, proximoDia, iniciar, addExNaSessao, concluir, descartar, removerSessao,
-  volume, totalSeries, evolucao,
+  volume, totalSeries,
 } from "./treino.js";
-import { secaoPersonal, iniciarDescanso, cartaoDescanso } from "./tela-personal.js";
-import { emRecuperacao, sugerirPrincipal, cargaRecuo, e1rm, melhorDa, ehComposto } from "./personal.js";
+import { cartaoPersonalInicio, iniciarDescanso, cartaoDescanso } from "./tela-personal.js";
+import {
+  emRecuperacao, sugerirPrincipal, cargaRecuo, e1rm, melhorDa, ehComposto, recordes, semanaDeTreino, semanasSeguidas,
+  minutosEstimados, gruposDoDia, recordesDaSessao, forcaDoExercicio, exerciciosFeitos,
+} from "./personal.js";
 import { musculosDo } from "./musculos.js";
 import { svgCorpo } from "./avatar.js";
 import { comCorpo, desenhar } from "./tela-perfil.js";
 import { GRUPO_DE } from "./tela-treino-corpo.js";
 import { PONTOS_DOR, nivelDor } from "./corpo.js";
 import { exercicio } from "./treino.js";
-import { secaoCardio, secaoCardioSessao, linhaCardioDia } from "./tela-cardio.js";
-import { descreverCardio } from "./cardio.js";
+import { secaoCardioSessao, linhaCardioDia } from "./tela-cardio.js";
+import { planoCardio, resumoCardio } from "./cardio.js";
 
 const hora = (ts) => new Date(ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
 
 // ---------- início ----------
+// Mockup "Início do treino" (canvas Neru Treino): semana em bolinhas, cartão amarelo do próximo treino com o corpo,
+// os outros dias em cartões que rolam de lado, um aviso do personal por vez, cardio e progresso, últimos treinos.
 function telaVazia() {
   return `
-    <div class="sem-chave">
+    <section class="caixa sem-plano">
       <h2>Monta teu plano de treino</h2>
       <p>O app guarda tuas séries e cargas e sugere quanto carregar na próxima vez. Dá para começar por um modelo de 5 dias e trocar o que quiser, ou montar do zero.</p>
-      <div class="par botoes">
-        <button class="botao" data-acao="usar-modelo">Usar o modelo de 5 dias</button>
-        <button class="botao fraco" data-acao="plano-do-zero">Montar do zero</button>
+      <button class="botao escuro cheio" data-acao="usar-modelo">Usar o modelo de 5 dias</button>
+      <button class="botao fraco cheio" data-acao="plano-do-zero">Montar do zero</button>
+      <button class="botao fraco cheio" data-acao="abrir-avaliacao">Avaliação com o personal (monta o programa para ti)</button>
+    </section>
+    <button class="atalho" data-acao="aba" data-aba="cardio"><span>${ICONE_CARDIO}<b>Cardio</b></span><span class="seta-dir" aria-hidden="true">›</span></button>`;
+}
+
+const ICONE_CHECK = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>`;
+const ICONE_FOGO = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c1 4 5 5 5 10a5 5 0 0 1-10 0c0-3 2-4 2-6 2 1 3 2 3 4"/></svg>`;
+const ICONE_PLAY = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.5.9l12-7.5a1 1 0 0 0 0-1.8l-12-7.5A1 1 0 0 0 7 4.5z"/></svg>`;
+const ICONE_HALTER = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10v4M6 7v10M18 7v10M21 10v4M6 12h12"/></svg>`;
+export const ICONE_CARDIO = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>`;
+const ICONE_SOBE = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18l5-6 4 3 7-9"/><path d="M15 6h5v5"/></svg>`;
+export const ICONE_ESTRELA = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l3 7h7l-5.5 4.5L18.5 21 12 16.5 5.5 21l2-7.5L2 9h7z"/></svg>`;
+const ICONE_PLANO = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M4 12h16M4 18h7"/><circle cx="17" cy="6" r="2"/><circle cx="14" cy="18" r="2"/></svg>`;
+const SEMANA = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
+
+function cartaoSemana() {
+  const dias = semanaDeTreino(), feitos = dias.filter((d) => d.feito).length;
+  const meta = Math.min(7, S.personal.avaliacao?.dias || T().plano.length || 3), seguidas = semanasSeguidas();
+  return `
+    <section class="semana-treino">
+      <div class="cab-semana">
+        <b>Esta semana <span>· ${feitos} de ${meta} ${meta === 1 ? "treino" : "treinos"}</span></b>
+        ${seguidas >= 2 ? `<span class="selo-seguidas">${ICONE_FOGO}${seguidas} semanas seguidas</span>` : ""}
       </div>
-      <button class="botao fraco cheio" data-acao="abrir-avaliacao" style="margin-top:10px">Avaliação com o personal (monta o programa para ti)</button>
-    </div>
-    ${secaoCardio()}`;
+      <ol class="bolinhas">${dias.map((d, k) => `
+        <li class="${d.feito ? "feito" : d.hoje ? "hoje" : d.futuro ? "futuro" : ""}"><span>${SEMANA[k]}</span><i>${d.feito ? ICONE_CHECK : ""}</i></li>`).join("")}</ol>
+    </section>`;
+}
+
+// O corpo com os músculos do dia: os de mais séries em coral, os outros em amarelo claro
+const COSTAS_DIA = new Set(["costas", "posterior", "gluteos", "panturrilha", "triceps"]);
+function corpoDoDia(dia) {
+  if (!comCorpo()) return `<span class="avatar-carregando"></span>`;
+  const gs = gruposDoDia(dia);
+  if (!gs.length) return "";
+  const topo = gs[0].series, peso = Object.fromEntries(gs.map((x) => [x.g, x.series >= topo * 0.6 ? "sel" : "ajuda"]));
+  const atras = gs.filter((x) => COSTAS_DIA.has(x.g)).reduce((t, x) => t + x.series, 0), frente = gs.reduce((t, x) => t + x.series, 0) - atras;
+  return svgCorpo(desenhar(atras > frente ? "back" : "front", hoje(), {}, { camada: (s) => peso[GRUPO_DE[s]] || "musculo" }),
+    { cores: { sel: "#F27A68", ajuda: "#FCE6B0", musculo: "#FFF3D1" }, rotulo: `Músculos de ${dia.nome}` });
+}
+
+function cartaoProximo(prox) {
+  const t = T(), k = t.plano.indexOf(prox), gs = gruposDoDia(prox), total = prox.ex.reduce((n, x) => n + x.series, 0);
+  return `
+    <section class="proximo-treino">
+      <div class="prox-cab">
+        <div>
+          <small>Próximo · dia ${k + 1} de ${t.plano.length}</small>
+          <h2>${esc(prox.nome)}</h2>
+          <span class="prox-meta">${prox.ex.length ? `${plural(prox.ex.length, "exercício", "exercícios")} · ${plural(total, "série", "séries")} · ~${minutosEstimados(prox)} min` : "Ainda sem exercícios"}</span>
+          ${gs.length ? `<span class="chips-musc">${gs.slice(0, 4).map((x, i) => `<span class="${i === 0 ? "principal" : "claro"}">${esc(GRUPOS[x.g])}</span>`).join("")}</span>` : ""}
+        </div>
+        ${gs.length ? `<div class="corpo-dia">${corpoDoDia(prox)}</div>` : ""}
+      </div>
+      ${linhaCardioDia(prox.id)}
+      ${prox.ex.length ? `<button class="botao escuro cheio comecar" data-acao="comecar-treino" data-id="${esc(prox.id)}">${ICONE_PLAY}Começar treino</button>`
+        : `<button class="botao escuro cheio" data-acao="editar-plano">Adicionar exercícios</button>`}
+    </section>`;
+}
+
+function outrosTreinos(prox) {
+  const t = T(), outros = t.plano.filter((d) => d !== prox);
+  const barra = (d) => {
+    const gs = gruposDoDia(d).slice(0, 3);
+    return gs.map((x, i) => `<i class="${["c1", "c2", "c3"][i]}" style="flex:${x.series}"></i>`).join("");
+  };
+  return `
+    <section class="bloco-treino outros-treinos">
+      <div class="titulo-linha"><h2>Outros treinos</h2><button class="link" data-acao="editar-plano">Editar plano</button></div>
+      <ul class="rolo">
+        ${outros.map((d) => `<li><button data-acao="comecar-treino" data-id="${esc(d.id)}"><span class="barra-musc">${barra(d)}</span><b>${esc(d.nome)}</b><small>dia ${t.plano.indexOf(d) + 1} · ${plural(d.ex.length, "exercício", "exercícios")}</small></button></li>`).join("")}
+        <li><button class="livre" data-acao="comecar-treino" data-id=""><span class="mais" aria-hidden="true">+</span><b>Treino livre</b><small>escolhe na hora</small></button></li>
+      </ul>
+    </section>`;
+}
+
+function cartaoCardio() {
+  const p = planoCardio(), r = resumoCardio(), alvo = p ? 3 : 0;
+  return `
+    <button class="mini-cartao" data-acao="aba" data-aba="cardio">
+      <span class="rotulo-mini">${ICONE_CARDIO}Cardio</span>
+      <b class="grande">${r.sessoes}${alvo ? ` <span>de ${alvo}</span>` : ""}</b>
+      ${alvo ? `<span class="tracos">${Array.from({ length: alvo }, (_, k) => `<i class="${k < r.sessoes ? "on" : ""}"></i>`).join("")}</span>` : ""}
+      <small>${p ? "nos últimos 7 dias" : r.sessoes ? "nos últimos 7 dias, sem plano" : "monta um plano de cardio"}</small>
+    </button>`;
+}
+
+// Linha simples do 1RM estimado: os pontos sem eixo, o último destacado
+function linhaMini(pontos, w = 140, h = 38) {
+  if (pontos.length < 2) return `<svg class="linha-mini" viewBox="0 0 ${w} ${h}" aria-hidden="true"><line x1="2" y1="${h - 4}" x2="${w - 2}" y2="${h - 4}"/></svg>`;
+  const vs = pontos.map((p) => p.v), min = Math.min(...vs), max = Math.max(...vs), amp = max - min || 1;
+  const xy = pontos.map((p, i) => [2 + (i * (w - 8)) / (pontos.length - 1), h - 4 - ((p.v - min) / amp) * (h - 10)]);
+  const [ux, uy] = xy[xy.length - 1];
+  return `<svg class="linha-mini" viewBox="0 0 ${w} ${h}" aria-hidden="true"><path d="M${xy.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(" L")}"/><circle cx="${ux.toFixed(1)}" cy="${uy.toFixed(1)}" r="4"/></svg>`;
+}
+
+function cartaoProgresso() {
+  const top = exerciciosFeitos(somaDias(hoje(), -90))[0], pts = top ? forcaDoExercicio(top.ex, somaDias(hoje(), -90)).slice(-12) : [];
+  const rec = recordes(hoje(), 30).length;
+  return `
+    <button class="mini-cartao" data-acao="aba" data-aba="progresso">
+      <span class="rotulo-mini">${ICONE_SOBE}Progresso</span>
+      ${linhaMini(pts)}
+      <small>${rec ? `<span class="estrela">${ICONE_ESTRELA}</span>${plural(rec, "recorde", "recordes")} no mês` : top ? esc(top.nome) : "aparece depois dos treinos"}</small>
+    </button>`;
+}
+
+function ultimosTreinos() {
+  const ss = T().sessoes.slice(-3).reverse();
+  if (!ss.length) return "";
+  return `
+    <section class="bloco-treino ultimos">
+      <div class="titulo-linha"><h2>Últimos treinos</h2>${T().sessoes.length > 3 ? `<button class="link" data-acao="aba" data-aba="historico">Ver todos</button>` : ""}</div>
+      <ul class="caixa lista-sessoes">${ss.map(linhaSessao).join("")}</ul>
+    </section>`;
+}
+export function linhaSessao(s) {
+  const min = s.fim && s.ini ? Math.max(1, Math.round((s.fim - s.ini) / 60000)) : 0, pr = recordesDaSessao(s).length;
+  const dt = paraData(s.d);
+  return `<li><button data-acao="ver-sessao" data-id="${esc(s.id)}">
+    <span class="data-sessao"><b>${dt.getDate()}</b><small>${dt.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "").toUpperCase()}</small></span>
+    <span class="oque"><b>${esc(s.nome)}</b><small>${min ? `${min} min · ` : ""}${plural(totalSeries(s), "série", "séries")}</small></span>
+    ${pr ? `<span class="selo-pr">${pr} PR</span>` : ""}</button></li>`;
 }
 
 function telaInicio() {
-  const t = T(), prox = proximoDia(), outros = t.plano.filter((d) => d.id !== prox.id);
-  const historico = t.sessoes.slice(-12).reverse();
+  const prox = proximoDia();
   return `
-    <section class="proximo">
-      <p class="texto">Pela ordem do plano, o próximo é</p>
-      <h2>${esc(prox.nome)}</h2>
-      ${prox.ex.length ? `<ul class="lista-ex">${prox.ex.map((x) => `
-        <li><span class="oque">${esc(nomeEx(x.ex))}</span><span class="pts"></span><b>${x.series} × ${x.min} a ${x.max}</b></li>`).join("")}</ul>`
-      : `<p class="vazio">Este dia ainda não tem exercícios. Adiciona em Editar plano.</p>`}
-      ${linhaCardioDia(prox.id)}
-      <button class="botao cheio" data-acao="comecar-treino" data-id="${esc(prox.id)}">Começar treino</button>
-      <button class="botao fraco cheio treino-corpo" data-acao="aba" data-aba="corpotreino">Treino no corpo: estímulo, recuperação e força</button>
-    </section>
-
-    ${secaoPersonal()}
-
-    ${secaoCardio()}
-
-    <section class="secao">
-      <h2>Outro treino</h2>
-      <ul class="linhas">
-        ${outros.map((d) => `<li><button data-acao="comecar-treino" data-id="${esc(d.id)}"><span>${esc(d.nome)}</span><small>${plural(d.ex.length, "exercício", "exercícios")}</small></button></li>`).join("")}
-        <li><button data-acao="comecar-treino" data-id=""><span>Treino livre</span><small>escolhe os exercícios na hora</small></button></li>
-      </ul>
-      <button class="botao fraco cheio" data-acao="editar-plano">Editar plano</button>
-    </section>
-
-    ${secaoCargas()}
-
-    <section class="secao">
-      <h2>Histórico</h2>
-      ${historico.length ? `<ul class="linhas">${historico.map((s) => `
-        <li><button data-acao="ver-sessao" data-id="${esc(s.id)}"><span>${esc(s.nome)}</span><small>${dataCurta(s.d)}, ${plural(totalSeries(s), "série", "séries")}</small></button></li>`).join("")}</ul>`
-      : `<p class="vazio">Teus treinos concluídos aparecem aqui.</p>`}
-    </section>`;
+    ${cartaoSemana()}
+    ${cartaoProximo(prox)}
+    ${outrosTreinos(prox)}
+    ${cartaoPersonalInicio()}
+    <section class="par-cartoes">${cartaoCardio()}${cartaoProgresso()}</section>
+    ${ultimosTreinos()}`;
 }
 
 // ---------- sessão ----------
@@ -234,40 +331,78 @@ function telaSessao(a) {
 }
 
 // ---------- plano ----------
+// Mockup "Editar plano": cada dia é um cartão que abre; o exercício aberto mostra séries e repetições com mais e
+// menos, trocar, tirar e a ordem. O que muda fica salvo na hora.
+const faixa = (x) => `${x.series} × ${x.min === x.max ? x.min : `${x.min}–${x.max}`}`;
+const passoPlano = (campo, i, j, valor, rotulo) => `
+  <div class="passo">
+    <span>${rotulo}</span>
+    <span class="passo-ctrl">
+      <button data-acao="passo-plano" data-campo="${campo}" data-i="${i}" data-j="${j}" data-n="-1" aria-label="Menos: ${rotulo.toLowerCase()}">−</button>
+      <b>${valor}</b>
+      <button data-acao="passo-plano" data-campo="${campo}" data-i="${i}" data-j="${j}" data-n="1" aria-label="Mais: ${rotulo.toLowerCase()}">+</button>
+    </span>
+  </div>`;
+
+function linhaExPlano(d, i, x, j) {
+  const aberto = ui.exPlano === `${i}:${j}`, ms = musculosDo(x.ex);
+  const musc = ms.map(([g]) => GRUPOS[g]).slice(0, 2).join(", ");
+  return `
+    <li class="${aberto ? "aberto" : ""}">
+      <button class="ex-plano" data-acao="abrir-ex-plano" data-i="${i}" data-j="${j}" aria-expanded="${aberto}">
+        <span class="oque"><b>${esc(nomeEx(x.ex))}</b>${musc ? `<small>${esc(musc)}</small>` : ""}</span>
+        <span class="pilula">${faixa(x)}</span>
+      </button>
+      ${aberto ? `
+      <div class="ajuste-ex">
+        <div class="passos tres">
+          ${passoPlano("series", i, j, x.series, "Séries")}
+          ${passoPlano("min", i, j, x.min, "Reps mín.")}
+          ${passoPlano("max", i, j, x.max, "Reps máx.")}
+        </div>
+        <div class="acoes-ex">
+          <button class="mini" data-acao="mover-ex" data-i="${i}" data-j="${j}" data-n="-1" aria-label="Subir o exercício" ${j === 0 ? "disabled" : ""}>${ICONE.cima}</button>
+          <button class="mini" data-acao="mover-ex" data-i="${i}" data-j="${j}" data-n="1" aria-label="Descer o exercício" ${j === d.ex.length - 1 ? "disabled" : ""}>${ICONE.baixo}</button>
+          <button class="link" data-acao="abrir-biblioteca" data-para="trocar" data-i="${i}" data-j="${j}">Trocar exercício</button>
+          <button class="link perigo" data-acao="tirar-ex" data-i="${i}" data-j="${j}">Tirar do dia</button>
+        </div>
+      </div>` : ""}
+    </li>`;
+}
+
+function cartaoDia(d, i, n) {
+  const aberto = ui.diaPlano === i, gs = gruposDoDia(d).slice(0, 3);
+  const barra = gs.map((x, k) => `<i class="${["c1", "c2", "c3"][k]}" style="flex:${x.series}"></i>`).join("");
+  if (!aberto) return `
+    <li class="dia-cartao">
+      <button class="cab-dia" data-acao="abrir-dia" data-i="${i}" aria-expanded="false">
+        <span class="num">${i + 1}</span>
+        <span class="oque"><b>${esc(d.nome)}</b><span class="barra-musc">${barra}</span></span>
+        <small>${d.ex.length} exerc.</small>${ICONE.baixo}
+      </button>
+    </li>`;
+  return `
+    <li class="dia-cartao aberto">
+      <div class="cab-dia">
+        <span class="num">${i + 1}</span>
+        <label class="nome-dia"><span class="so-leitor">Nome do dia ${i + 1}</span><input data-campo="nome-dia" data-i="${i}" value="${esc(d.nome)}" maxlength="40"></label>
+        <button class="mini" data-acao="abrir-dia" data-i="${i}" aria-expanded="true" aria-label="Fechar o dia">${ICONE.cima}</button>
+      </div>
+      ${d.ex.length ? `<ul class="exs-plano">${d.ex.map((x, j) => linhaExPlano(d, i, x, j)).join("")}</ul>` : `<p class="vazio">Nenhum exercício neste dia.</p>`}
+      <button class="tracejado" data-acao="abrir-biblioteca" data-para="plano" data-i="${i}">+ Adicionar exercício</button>
+      <div class="acoes-ex">
+        <button class="mini" data-acao="mover-dia" data-i="${i}" data-n="-1" aria-label="Subir o dia" ${i === 0 ? "disabled" : ""}>${ICONE.cima}</button>
+        <button class="mini" data-acao="mover-dia" data-i="${i}" data-n="1" aria-label="Descer o dia" ${i === n - 1 ? "disabled" : ""}>${ICONE.baixo}</button>
+        <button class="link perigo" data-acao="apagar-dia" data-i="${i}">Apagar dia</button>
+      </div>
+    </li>`;
+}
+
 function telaPlano() {
   const t = T();
-  const mini = (acao, i, j, n, icone, rotulo, desligado) =>
-    `<button class="mini" data-acao="${acao}" data-i="${i}" ${j == null ? "" : `data-j="${j}"`} data-n="${n}" aria-label="${rotulo}" ${desligado ? "disabled" : ""}>${icone}</button>`;
   return `
-    <p class="texto">Os dias rodam nesta ordem. O que mudares aqui fica salvo na hora.</p>
-    ${t.plano.map((d, i) => `
-      <section class="dia-plano">
-        <div class="cab">
-          <input data-campo="nome-dia" data-i="${i}" value="${esc(d.nome)}" maxlength="40" aria-label="Nome do dia ${i + 1}">
-          ${mini("mover-dia", i, null, -1, ICONE.cima, "Subir o dia", i === 0)}
-          ${mini("mover-dia", i, null, 1, ICONE.baixo, "Descer o dia", i === t.plano.length - 1)}
-        </div>
-        <ul>
-          ${d.ex.map((x, j) => `
-            <li>
-              <span class="nome">${esc(nomeEx(x.ex))}</span>
-              <div class="ajuste">
-                <label><input type="number" inputmode="numeric" min="1" max="10" data-campo="series" data-i="${i}" data-j="${j}" value="${x.series}" aria-label="Séries"><small>séries</small></label>
-                <label><input type="number" inputmode="numeric" min="1" max="50" data-campo="min" data-i="${i}" data-j="${j}" value="${x.min}" aria-label="Repetições mínimas"><small>mín</small></label>
-                <label><input type="number" inputmode="numeric" min="1" max="50" data-campo="max" data-i="${i}" data-j="${j}" value="${x.max}" aria-label="Repetições máximas"><small>máx</small></label>
-                ${mini("mover-ex", i, j, -1, ICONE.cima, "Subir o exercício", j === 0)}
-                ${mini("mover-ex", i, j, 1, ICONE.baixo, "Descer o exercício", j === d.ex.length - 1)}
-                <button class="mini tirar-x" data-acao="tirar-ex" data-i="${i}" data-j="${j}" aria-label="Tirar ${esc(nomeEx(x.ex))} do dia">×</button>
-              </div>
-            </li>`).join("")}
-        </ul>
-        <div class="acoes-ex">
-          <button class="link" data-acao="abrir-biblioteca" data-para="plano" data-i="${i}">Adicionar exercício</button>
-          <button class="link fraco" data-acao="apagar-dia" data-i="${i}">Apagar dia</button>
-        </div>
-      </section>`).join("")}
-    <button class="botao fraco cheio" data-acao="novo-dia">Adicionar dia</button>
-    <button class="botao cheio" data-acao="fechar-plano">Concluir edição</button>`;
+    <ol class="dias-plano">${t.plano.map((d, i) => cartaoDia(d, i, t.plano.length)).join("")}</ol>
+    <button class="tracejado grande" data-acao="novo-dia">+ Adicionar dia</button>`;
 }
 
 export const telaTreino = {
@@ -276,15 +411,21 @@ export const telaTreino = {
     if (a) return a.nome;
     return ui.treino === "plano" && temPlano() ? "Plano de treino" : "Treino";
   },
-  // treino em andamento: botão de sair (o treino continua aberto), tempo e exercício no subtítulo, Terminar à direita
+  // treino em andamento: botão de sair (o treino continua aberto), tempo e exercício no subtítulo, Terminar à direita.
+  // Editor do plano: voltar, "N dias · rodam nesta ordem" e Pronto. Início: o botão redondo do plano.
   voltar() { return S.treino?.atual ? { aba: "hoje", rotulo: "Sair do treino (ele continua aberto)" } : ui.treino === "plano" && temPlano() ? { acao: "fechar-plano", rotulo: "Voltar ao treino" } : null; },
   sub() {
     const a = S.treino?.atual;
-    if (!a) return "";
+    if (!a) return ui.treino === "plano" && temPlano() ? `${plural(T().plano.length, "dia", "dias")} · rodam nesta ordem` : "";
     const min = Math.max(0, Math.round((Date.now() - a.ini) / 60000));
     return a.ex.length ? `${min} min · exercício ${exercicioAtual(a) + 1} de ${a.ex.length}` : `${min} min`;
   },
-  direita() { return S.treino?.atual ? `<button class="botao-topo" data-acao="concluir-treino">Terminar</button>` : ""; },
+  direita() {
+    if (S.treino?.atual) return `<button class="botao-topo" data-acao="concluir-treino">Terminar</button>`;
+    if (!temPlano()) return "";
+    return ui.treino === "plano" ? `<button class="botao-topo" data-acao="fechar-plano">Pronto</button>`
+      : `<button class="redondo" data-acao="editar-plano" aria-label="Editar plano">${ICONE_PLANO}</button>`;
+  },
   html() {
     const a = S.treino?.atual;
     if (a) return telaSessao(a);
@@ -292,24 +433,6 @@ export const telaTreino = {
     return ui.treino === "plano" ? telaPlano() : telaInicio();
   },
 };
-
-// Seção "Cargas" da tela inicial do treino
-export function secaoCargas() {
-  const lista = evolucao();
-  if (!lista.length) return "";
-  return `
-    <section class="secao">
-      <h2>Cargas</h2>
-      <ul class="cargas">
-        ${lista.map((r) => {
-          const delta = r.ultimo.kg - r.primeiro.kg;
-          const mudou = r.vezes > 1 && delta !== 0 ? `<small class="${delta > 0 ? "subiu" : "desceu"}">${delta > 0 ? "+" : "−"}${fmtKg(Math.abs(delta))}</small>` : "";
-          return `<li><span class="oque">${esc(r.nome)}</span><span class="pts"></span><b>${r.ultimo.kg > 0 ? fmtKg(r.ultimo.kg) + " × " : ""}${r.ultimo.reps}</b>${mudou}</li>`;
-        }).join("")}
-      </ul>
-      <p class="legenda"><span>Melhor série do último treino de cada exercício, e a diferença de carga desde o primeiro registro.</span></p>
-    </section>`;
-}
 
 // ---------- folhas ----------
 FOLHAS.biblioteca = (f) => {
@@ -335,25 +458,14 @@ FOLHAS.biblioteca = (f) => {
     </form>`;
 };
 
-FOLHAS.sessao = (f) => {
-  const s = T().sessoes.find((x) => x.id === f.id);
-  if (!s) return "";
-  const min = s.fim && s.ini ? Math.max(1, Math.round((s.fim - s.ini) / 60000)) : 0;
-  const cardio = T().cardio.find((c) => c.sessao === s.id);
-  return `
-    <h2 id="folha-titulo">${esc(s.nome)}</h2>
-    <p class="texto">${dataCurta(s.d)}${min ? `, ${min} min` : ""}, ${plural(totalSeries(s), "série", "séries")}, ${int(volume(s))} kg de volume${s.folego ? `, fôlego ${s.folego} de 5` : ""}</p>
-    <ul class="lista-ex">
-      ${s.ex.map((x) => `<li><span class="oque">${esc(x.nome)}</span><span class="pts"></span><b>${esc(resumoSeries(x.series))}</b></li>`).join("")}
-    </ul>
-    ${cardio ? `<p class="texto">Cardio: ${esc(descreverCardio(cardio))}.</p>` : ""}
-    <button class="botao perigo cheio" data-acao="excluir-sessao" data-id="${esc(s.id)}">Excluir treino</button>`;
-};
-
 function adicionarEscolhido(exId) {
   const f = ui.folha;
   if (f.para === "sessao") addExNaSessao(exId);
-  else { T().plano[f.i]?.ex.push({ ex: exId, series: 3, min: 8, max: 12 }); salvar(); }
+  else if (f.para === "trocar") {
+    const x = T().plano[f.i]?.ex[f.j];
+    if (x) { const de = x.ex; x.ex = exId; salvar(); fecharFolha(); render(); avisar(`${nomeEx(de)} trocado por ${nomeEx(exId)}`); }
+    return;
+  } else { T().plano[f.i]?.ex.push({ ex: exId, series: 3, min: 8, max: 12 }); ui.diaPlano = f.i; salvar(); }
   fecharFolha(); render();
   avisar(`${nomeEx(exId)} adicionado`);
 }
@@ -368,20 +480,38 @@ function confirmar(b, texto) {
 // ---------- ações ----------
 Object.assign(ACOES, {
   "usar-modelo"() { usarModelo(); ui.treino = "inicio"; render(); avisar("Modelo de 5 dias criado. Ajusta em Editar plano"); },
-  "plano-do-zero"() { addDia(); ui.treino = "plano"; render(); },
-  "editar-plano"() { ui.treino = "plano"; render(); window.scrollTo(0, 0); },
+  "plano-do-zero"() { addDia(); ui.treino = "plano"; ui.diaPlano = 0; render(); },
+  "editar-plano"() { ui.treino = "plano"; ui.diaPlano = T().plano.indexOf(proximoDia()); ui.exPlano = null; ui.aba = "treino"; render(); window.scrollTo(0, 0); },
   "fechar-plano"() { ui.treino = "inicio"; render(); window.scrollTo(0, 0); },
-  "novo-dia"() { addDia(); render(); },
+  "novo-dia"() { addDia(); ui.diaPlano = T().plano.length - 1; ui.exPlano = null; render(); },
+  "abrir-dia"(b) { const i = Number(b.dataset.i); ui.diaPlano = ui.diaPlano === i ? null : i; ui.exPlano = null; render(); },
+  "abrir-ex-plano"(b) { const k = `${b.dataset.i}:${b.dataset.j}`; ui.exPlano = ui.exPlano === k ? null : k; render(); },
+  "passo-plano"(b) {
+    const x = T().plano[b.dataset.i]?.ex[b.dataset.j], c = b.dataset.campo, n = Number(b.dataset.n);
+    if (!x) return;
+    x[c] = Math.min(c === "series" ? 10 : 50, Math.max(1, x[c] + n));
+    if (x.max < x.min) { if (c === "min") x.max = x.min; else x.min = x.max; }
+    salvar(); render();
+  },
   "apagar-dia"(b) {
     if (!confirmar(b, "Apagar mesmo?")) return;
-    T().plano.splice(Number(b.dataset.i), 1); salvar();
+    T().plano.splice(Number(b.dataset.i), 1); ui.diaPlano = null; ui.exPlano = null; salvar();
     render();
   },
-  "mover-dia"(b) { mover(T().plano, Number(b.dataset.i), Number(b.dataset.n)); render(); },
-  "mover-ex"(b) { mover(T().plano[b.dataset.i].ex, Number(b.dataset.j), Number(b.dataset.n)); render(); },
-  "tirar-ex"(b) { T().plano[b.dataset.i].ex.splice(Number(b.dataset.j), 1); salvar(); render(); },
+  "mover-dia"(b) {
+    const i = Number(b.dataset.i), n = Number(b.dataset.n);
+    mover(T().plano, i, n); if (ui.diaPlano === i) ui.diaPlano = Math.min(T().plano.length - 1, Math.max(0, i + n)); render();
+  },
+  "mover-ex"(b) {
+    const i = Number(b.dataset.i), j = Number(b.dataset.j), n = Number(b.dataset.n), lista = T().plano[i].ex;
+    mover(lista, j, n); if (ui.exPlano === `${i}:${j}`) ui.exPlano = `${i}:${Math.min(lista.length - 1, Math.max(0, j + n))}`; render();
+  },
+  "tirar-ex"(b) {
+    if (!confirmar(b, "Tirar mesmo?")) return;
+    T().plano[b.dataset.i].ex.splice(Number(b.dataset.j), 1); ui.exPlano = null; salvar(); render();
+  },
 
-  "abrir-biblioteca"(b) { abrirFolha({ tipo: "biblioteca", para: b.dataset.para, i: Number(b.dataset.i) }); },
+  "abrir-biblioteca"(b) { abrirFolha({ tipo: "biblioteca", para: b.dataset.para, i: Number(b.dataset.i), j: Number(b.dataset.j) }); },
   "escolher-ex"(b) { adicionarEscolhido(b.dataset.id); },
 
   "comecar-treino"(b) { iniciar(b.dataset.id); ui.treino = "inicio"; ui.exAtual = null; ui.serieVez = null; render(); window.scrollTo(0, 0); },
@@ -430,9 +560,12 @@ Object.assign(ACOES, {
   "concluir-treino"() {
     const a = T().atual;
     if (!a.ex.some((x) => x.series.some((s) => s.ok)) && !a.cardio) return avisar("Marca pelo menos uma série ou registra o cardio, ou descarta o treino");
-    const comCardio = !!a.cardio, s = concluir();
+    const s = concluir();
+    ui.descanso = null; ui.exAtual = null; ui.serieVez = null;
+    // com séries feitas, abre o resumo do treino (mockup "Fim do treino"); só cardio volta ao início
+    if (s) { ui.resumo = { id: s.id, novo: true }; ui.aba = "resumo"; ui.volta = null; }
     render(); window.scrollTo(0, 0);
-    avisar(s ? `Treino salvo: ${plural(totalSeries(s), "série", "séries")}${comCardio ? " e cardio" : ""}` : "Cardio salvo");
+    if (!s) avisar("Cardio salvo");
   },
   "descartar-treino"(b) {
     if (!confirmar(b, "Descartar mesmo?")) return;
@@ -446,13 +579,6 @@ Object.assign(ACOES, {
     x.dor = { ponto: b.dataset.ponto, n: Number(b.dataset.n) };
     salvar(); render();
   },
-  "ver-sessao"(b) { abrirFolha({ tipo: "sessao", id: b.dataset.id }); },
-  "excluir-sessao"(b) {
-    if (!confirmar(b, "Excluir mesmo?")) return;
-    const r = removerSessao(b.dataset.id);
-    fecharFolha(); render();
-    if (r) avisar("Treino excluído", () => { T().sessoes.splice(r.i, 0, r.fora); salvar(); });
-  },
 });
 
 FORMS["criar-ex"] = (form) => {
@@ -463,7 +589,7 @@ FORMS["criar-ex"] = (form) => {
 // Campos que salvam ao mudar, sem redesenhar a tela (para não perder o foco)
 MUDANCAS.push((el) => {
   const campo = el.dataset?.campo;
-  if (!campo) return false;
+  if (!["kg", "reps", "rir", "nome-dia", "series", "min", "max"].includes(campo)) return false;
   const t = T(), i = Number(el.dataset.i), j = Number(el.dataset.j);
   if (campo === "kg" || campo === "reps" || campo === "rir") {
     const s = t.atual?.ex[i]?.series[j];

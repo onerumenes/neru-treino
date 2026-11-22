@@ -1,7 +1,7 @@
 // Motor do personal: monta o programa pela avaliação (dias, tempo, nível, lesões, prioridades), confere o volume
 // por músculo, acha recordes e exercícios parados e controla os blocos de treino com semana de recuperação (deload).
 
-import { S, salvar, hoje, somaDias, novoId } from "./store.js";
+import { S, salvar, hoje, somaDias, novoId, paraData } from "./store.js";
 import { T, GRUPOS, EXERCICIOS, exercicio, nomeEx, GANCHOS } from "./treino.js";
 import { lesoesAtivas } from "./corpo.js";
 
@@ -261,6 +261,62 @@ GANCHOS.principal = (exId, nSeries, min, max) => {
     ...Array.from({ length: nSeries - 1 }, () => ({ kg: cargaRecuo(kg, passo), reps: "", rir: "", ok: false, tipo: "recuo", alvoReps: max, alvoRir: 2 })),
   ];
 };
+
+// ---------- resumos para as telas do treino ----------
+// Semana de segunda a domingo: em quais dias houve treino
+export function semanaDeTreino(d = hoje()) {
+  const dow = (paraData(d).getDay() + 6) % 7, seg = somaDias(d, -dow);
+  const feitos = new Set(T().sessoes.map((s) => s.d));
+  return Array.from({ length: 7 }, (_, k) => { const dia = somaDias(seg, k); return { d: dia, feito: feitos.has(dia), hoje: dia === d, futuro: dia > d }; });
+}
+// Semanas seguidas com pelo menos um treino, contando a atual só se já teve treino
+export function semanasSeguidas(d = hoje()) {
+  const datas = T().sessoes.map((s) => s.d);
+  let seg = somaDias(d, -((paraData(d).getDay() + 6) % 7)), n = 0;
+  const teve = (ini) => datas.some((x) => x >= ini && x <= somaDias(ini, 6));
+  if (!teve(seg)) seg = somaDias(seg, -7);
+  while (teve(seg)) { n++; seg = somaDias(seg, -7); }
+  return n;
+}
+// Minutos estimados de um dia do plano: ~45 s por série mais o descanso dela
+export function minutosEstimados(dia) {
+  const seg = (dia?.ex || []).reduce((t, x) => t + x.series * (45 + descansoPara(x.ex)), 0);
+  return Math.max(5, Math.round(seg / 60 / 5) * 5);
+}
+// Músculos principais de um dia, do que tem mais séries para o que tem menos
+export function gruposDoDia(dia) {
+  const n = {};
+  for (const x of dia?.ex || []) { const g = exercicio(x.ex).g; if (g) n[g] = (n[g] || 0) + x.series; }
+  return Object.entries(n).sort((a, b) => b[1] - a[1]).map(([g, series]) => ({ g, series }));
+}
+// Exercícios em que a sessão bateu a melhor marca de antes dela: a série do recorde e a melhor série de antes
+const topoDa = (series) => series.reduce((b, y) => (e1rm(y.kg, y.reps, y.rir) > e1rm(b.kg, b.reps, b.rir) ? y : b), series[0]);
+export function recordesDaSessao(s) {
+  const antes = new Map();
+  for (const o of T().sessoes) {
+    if (o === s || o.d > s.d || (o.d === s.d && (o.fim || 0) >= (s.fim || 0))) continue;
+    for (const x of o.ex) { const m = melhorDa(x.series); if (m > (antes.get(x.ex)?.v || 0)) antes.set(x.ex, { v: m, serie: topoDa(x.series) }); }
+  }
+  return s.ex.map((x) => {
+    const m = melhorDa(x.series), a = antes.get(x.ex);
+    return a && m > a.v * 1.005 ? { ex: x.ex, nome: nomeEx(x.ex), serie: topoDa(x.series), antes: a.serie } : null;
+  }).filter(Boolean);
+}
+// 1RM estimado de um exercício, sessão a sessão, desde uma data
+export function forcaDoExercicio(exId, desde = "0000-00-00") {
+  return T().sessoes.filter((s) => s.d >= desde).map((s) => {
+    const x = s.ex.find((y) => y.ex === exId);
+    if (!x) return null;
+    const v = melhorDa(x.series);
+    return v ? { d: s.d, v: Math.round(v * 10) / 10, serie: topoDa(x.series) } : null;
+  }).filter(Boolean);
+}
+// Exercícios com histórico, do mais feito para o menos
+export function exerciciosFeitos(desde = "0000-00-00") {
+  const n = new Map();
+  for (const s of T().sessoes) if (s.d >= desde) for (const x of s.ex) n.set(x.ex, (n.get(x.ex) || 0) + 1);
+  return [...n.entries()].sort((a, b) => b[1] - a[1]).map(([ex, vezes]) => ({ ex, nome: nomeEx(ex), vezes }));
+}
 
 export { GRUPOS };
 

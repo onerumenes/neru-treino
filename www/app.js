@@ -27,6 +27,7 @@ import "./tela-dados.js";
 import "./tela-fotos.js";
 import "./tela-avaliacao.js";
 import "./tela-treino-corpo.js";
+import "./tela-progresso.js";
 import "./equipe-ia.js";
 import { iniciarEquipe } from "./equipe.js";
 import { agendarLembretes, ouvirLembretes } from "./lembretes.js";

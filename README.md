@@ -40,7 +40,9 @@ inventar valores. Por isso o modelo pequeno do celular dá conta.
 | `www/tela-dados.js` | Dados pessoais (o lápis do Perfil, e o primeiro uso) e Objetivo e ritmo |
 | `www/tela-fotos.js` | Fotos do físico: a mesma pose lado a lado, a análise pela IA e as próximas fotos |
 | `www/tela-avaliacao.js` | Avaliação corporal: dia de avaliação, dobras cutâneas, simetria, mapa de dores e saúde |
-| `www/musculos.js` | Carga por músculo: séries efetivas (perto da falha vale mais, composto conta meia série nos que ajudam), recuperação, força, sinais da semana leve e sugestões de volume |
+| `www/musculos.js` | Carga por músculo: séries efetivas (até 3 repetições da falha vale cheio; composto conta parte da série nos que ajudam, com exceções medidas), recuperação, força, sinais da semana leve e sugestões de volume |
+| `www/regioes.js` | Partes de cada músculo e o que cada exercício trabalha mais, com o nível de evidência; lacunas do plano que viram sugestão do personal |
+| `www/tela-progresso.js` | Progresso (força por exercício, recordes, séries por semana e por músculo), histórico, fim do treino e cardio |
 | `www/tela-treino-corpo.js` | Treino no corpo: o avatar pintado por estímulo, recuperação ou força |
 | `www/avatar.js` | Avatar anatômico: cada músculo escala pela medida da fita, com a camada de gordura por região |
 | `plugins/ia-local/` | Plugin Android (Java) que roda o modelo `.litertlm` com o LiteRT-LM |

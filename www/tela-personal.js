@@ -1,19 +1,21 @@
 // Telas do personal: avaliação, programa gerado, revisão da semana, blocos e cronômetro de descanso.
 
-import { S, salvar } from "./store.js";
-import { $, esc, dataCurta, ui, ACOES, FORMS, FOLHAS, render, avisar, abrirFolha, fecharFolha } from "./base.js";
-import { T, GRUPOS, nomeEx } from "./treino.js";
+import { S, salvar, hoje, somaDias, paraData } from "./store.js";
+import { $, esc, dataCurta, ui, TELAS, ACOES, FORMS, FOLHAS, render, avisar, abrirFolha, fecharFolha } from "./base.js";
+import { T, GRUPOS, nomeEx, exercicio } from "./treino.js";
 import {
   LESOES, gerarPrograma, aplicarPrograma, recordes, estagnados,
   trocarNoPlano, blocoAtual, descansoPara, semanaLeve, iniciarSemanaLeve, encerrarSemanaLeve,
 } from "./personal.js";
-import { volumePlanejado, volumeFeito, faixaVolume, descreverFaixas, sinaisSemanaLeve } from "./musculos.js";
+import { volumePlanejado, faixaVolume, descreverFaixas, sinaisSemanaLeve, sugestoesVolume, forcaPorMusculo } from "./musculos.js";
+import { lacunasDoPlano } from "./regioes.js";
 
 const NIVEIS = { iniciante: "Iniciante (menos de 1 ano)", intermediario: "Intermediário (1 a 3 anos)", avancado: "Avançado (3 anos ou mais)" };
 const FOCOS = { hipertrofia: "Hipertrofia", ambos: "Força e hipertrofia", forca: "Força" };
 // Gancho da IA (fase 4): comentário do personal na revisão
 export const NARRAR_PERSONAL = { revisao: null };
 const marcado = (c) => (c ? "checked" : "");
+const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
 
 // ---------- avaliação ----------
 FOLHAS.avaliacaoTreino = (f) => {
@@ -67,40 +69,145 @@ function tabelaVolume(vol, feito = null) {
     const [min, max] = faixaVolume(g), v = feito ? feito[g] || 0 : vol[g];
     const st = v < min ? "baixo" : v > max ? "alto" : "ok";
     return `<li class="${st}"><span>${GRUPOS[g]}</span><span class="barra"><i style="width:${Math.min(100, (v / (max * 1.2)) * 100).toFixed(0)}%"></i><b class="marca" style="left:${((min / (max * 1.2)) * 100).toFixed(0)}%"></b><b class="marca" style="left:${((max / (max * 1.2)) * 100).toFixed(0)}%"></b></span><b>${v.toLocaleString("pt-BR")}</b></li>`;
-  }).join("")}</ul><p class="legenda"><span>Faixa boa: ${feito ? "séries efetivas nos últimos 7 dias" : "séries efetivas por semana"} entre as marcas (${descreverFaixas()}).</span><span>Série perto da falha vale 1, longe dela vale menos (sem RIR anotado conta como 2). Exercício composto conta meia série nos músculos que ajudam.</span></p>`;
+  }).join("")}</ul><p class="legenda"><span>Faixa boa: ${feito ? "séries efetivas nos últimos 7 dias" : "séries efetivas por semana"} entre as marcas (${descreverFaixas()}).</span><span>Série com até 3 repetições sobrando vale 1; mais longe da falha vale menos. Exercício composto conta parte da série nos músculos que ajudam.</span></p>`;
 }
 
-// ---------- seção do personal no início do treino ----------
-export function secaoPersonal() {
-  const b = blocoAtual(), av = S.personal.avaliacao, leve = semanaLeve();
-  const rec = recordes(), est = estagnados(), feito = volumeFeito();
-  const temHistorico = T().sessoes.length > 0;
-  let bloco = "";
-  // bloco antigo de 5 semanas: quem estava no meio termina ele; depois, a semana leve vem pelos sinais
-  if (b && !b.acabou) bloco = `<p class="bloco-status ${b.deload ? "deload" : ""}">Semana <b>${b.semana}</b> de ${b.semanas} do bloco${b.deload ? ": semana de recuperação. Menos séries e 10% menos carga." : ""}</p>`;
-  else if (leve) bloco = `<div class="bloco-status deload"><p><b>Semana leve até ${dataCurta(leve.fim)}.</b> Menos séries e 10% menos carga, para o corpo se recuperar.</p><button class="link" data-acao="encerrar-semana-leve">Encerrar antes</button></div>`;
-  else if (temHistorico) {
-    const s = sinaisSemanaLeve();
-    bloco = `<div class="sinais-leve ${s.propor ? "propor" : ""}">
-      <div class="titulo-linha"><b>Semana leve</b><small>${s.propor ? "o corpo está pedindo" : `ainda não · ${s.ativos} de ${s.sinais.length} sinais`}</small></div>
-      <div class="sinais">${s.sinais.map((x) => `<span class="${x.ativo ? "on" : ""}" title="${esc(x.detalhe)}"><i></i>${x.nome}</span>`).join("")}</div>
-      ${s.propor ? `<p class="dica">${esc(s.sinais.filter((x) => x.ativo).map((x) => `${x.nome}: ${x.detalhe}`).join(". "))}.</p>
-        <button class="botao cheio" data-acao="iniciar-semana-leve">Fazer a semana leve (7 dias)</button>` : ""}
-    </div>`;
+// ---------- personal: sugestões, cartão do início e tela própria ----------
+// Mockup "Personal": o programa, as sugestões com dois botões, os sinais da semana leve e o comentário.
+// Sugestão dispensada volta a valer depois de 3 semanas.
+const ICONE_TROCA = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h13l-3-3M20 17H7l3 3"/></svg>`;
+const ICONE_MAIS = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>`;
+const ICONE_MENOS = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>`;
+const ICONE_ALVO = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></svg>`;
+const ICONE_PERSONAL = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10v4M6 7v10M18 7v10M21 10v4M6 12h12"/></svg>`;
+const ICONE_BRILHO = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/></svg>`;
+
+const dispensada = (id) => { const d = S.personal.dispensadas?.[id]; return !!d && d > somaDias(hoje(), -21); };
+const volDispensada = (k) => { const d = S.personal.sugestoesDispensadas?.[k]; return !!d && d > somaDias(hoje(), -21); };
+
+export function sugestoesPersonal() {
+  const out = [];
+  for (const x of estagnados()) {
+    if (!x.troca || dispensada(`troca:${x.ex}`)) continue;
+    out.push({ id: `troca:${x.ex}`, icone: ICONE_TROCA, tom: "laranja", titulo: `Trocar ${x.nome.toLowerCase()}`,
+      texto: `Parado há 3 treinos, sem bater a melhor marca. ${nomeEx(x.troca)} trabalha o mesmo músculo de outro jeito.`,
+      sim: `<button class="botao escuro" data-acao="trocar-exercicio" data-de="${esc(x.ex)}" data-para="${esc(x.troca)}">Trocar</button>`,
+      nao: `<button class="botao fraco" data-acao="dispensar-sugestao" data-id="troca:${esc(x.ex)}">Manter</button>` });
   }
+  for (const l of lacunasDoPlano()) {
+    if (!l.sugestao || dispensada(`lacuna:${l.id}`)) continue;
+    out.push({ id: `lacuna:${l.id}`, icone: ICONE_ALVO, tom: "amarelo", titulo: l.titulo, texto: `${l.texto} Que tal ${l.nomeSugestao.toLowerCase()}?`,
+      sim: `<button class="botao escuro" data-acao="adicionar-lacuna" data-ex="${esc(l.sugestao)}" data-g="${esc(l.g)}">Adicionar</button>`,
+      nao: `<button class="botao fraco" data-acao="dispensar-sugestao" data-id="lacuna:${esc(l.id)}">Agora não</button>` });
+  }
+  for (const v of sugestoesVolume()) {
+    if (volDispensada(`${v.g}:${v.delta}`)) continue;
+    const mais = v.delta > 0;
+    out.push({ id: `vol:${v.g}`, icone: mais ? ICONE_MAIS : ICONE_MENOS, tom: "amarelo",
+      titulo: `${mais ? "Mais" : "Menos"} ${Math.abs(v.delta)} séries de ${GRUPOS[v.g].toLowerCase()}`, texto: v.motivo,
+      sim: `<button class="botao escuro" data-acao="aplicar-volume" data-g="${esc(v.g)}" data-n="${v.delta}">${mais ? "Adicionar" : "Tirar"}</button>`,
+      nao: `<button class="botao fraco" data-acao="dispensar-volume" data-g="${esc(v.g)}" data-n="${v.delta}">Agora não</button>` });
+  }
+  return out;
+}
+
+function barrasLeve(s) {
+  return `<span class="tracos-leve">${s.sinais.map((x) => `<i class="${x.ativo ? "on" : ""}"></i>`).join("")}</span>`;
+}
+
+export function cartaoPersonalInicio() {
+  const sug = sugestoesPersonal(), av = S.personal.avaliacao, leve = semanaLeve(), temHist = T().sessoes.length > 0;
+  const s = temHist && !leve ? sinaisSemanaLeve() : null;
+  const sub = sug.length ? plural(sug.length, "sugestão", "sugestões") + " para esta semana" : av ? "nada para mudar agora" : "sem avaliação ainda";
+  const aviso = leve ? `<b>Semana leve até ${dataCurta(leve.fim)}.</b> Menos séries e 10% menos carga.`
+    : sug[0] ? `<b>${esc(sug[0].titulo)}.</b> ${esc(sug[0].texto)}`
+    : !av ? "Faz a avaliação para o personal montar o programa pelos teus dias, tempo, nível e lesões." : "";
   return `
-    <section class="secao personal">
-      <h2>Personal</h2>
-      ${bloco}
-      ${!av ? `<p class="texto">Faz a avaliação para o personal montar o programa pelos teus dias, tempo, nível e lesões.</p>` : ""}
-      ${temHistorico ? `
-        ${rec.length ? `<h3>Recordes da semana</h3><ul class="lista-ex">${rec.map((r) => `<li><span class="oque">${esc(r.nome)}</span><span class="pts"></span><b>+${String(r.ganho).replace(".", ",")}%</b></li>`).join("")}</ul>` : ""}
-        ${est.length ? `<h3>Parados há 3 treinos</h3><ul class="lista-ex">${est.map((x) => `<li><span class="oque">${esc(x.nome)}${x.troca ? `<br><small>trocar por ${esc(nomeEx(x.troca))}</small>` : ""}</span><span class="pts"></span>${x.troca ? `<button class="link" data-acao="trocar-exercicio" data-de="${esc(x.ex)}" data-para="${esc(x.troca)}">Trocar</button>` : ""}</li>`).join("")}</ul>` : ""}
-        ${Object.keys(feito).length ? `<h3>Volume dos últimos 7 dias</h3>${tabelaVolume(volumePlanejado(), feito)}` : ""}
-        ${ui.narracaoPersonal ? `<p class="narracao">${esc(ui.narracaoPersonal)}</p>` : NARRAR_PERSONAL.revisao ? `<button class="link" data-acao="narrar-personal">Pedir o comentário do personal</button>` : ""}` : ""}
-      <button class="botao fraco cheio" data-acao="abrir-avaliacao">${av ? "Refazer avaliação e programa" : "Avaliação com o personal"}</button>
+    <button class="cartao-personal" data-acao="aba" data-aba="personal">
+      <span class="cab-personal">
+        <span class="ic-personal">${ICONE_PERSONAL}</span>
+        <span class="oque"><b>Personal</b><small>${esc(sub)}</small></span>
+        <span class="seta-dir" aria-hidden="true">›</span>
+      </span>
+      ${aviso ? `<span class="aviso-personal">${aviso}</span>` : ""}
+      ${s ? `<span class="linha-leve">${barrasLeve(s)}Semana leve: ${s.ativos} de ${s.sinais.length} sinais${s.propor ? ", o corpo está pedindo" : ", ainda não"}</span>` : ""}
+    </button>`;
+}
+
+function cartaoPrograma() {
+  const av = S.personal.avaliacao;
+  if (!av) return `
+    <section class="programa">
+      <small>Teu programa</small>
+      <b>Sem avaliação ainda</b>
+      <p>O personal monta o programa pelos teus dias, tempo, nível, foco e lesões. O plano atual continua até usares o novo.</p>
+      <button class="botao amarelo cheio" data-acao="abrir-avaliacao">Fazer a avaliação</button>
+    </section>`;
+  const desde = av.d || hoje(), dias = Math.max(0, Math.round((paraData(hoje()) - paraData(desde)) / 864e5));
+  const semanas = Math.floor(dias / 7) + 1, feitos = T().sessoes.filter((s) => s.d >= desde).length;
+  const previstos = Math.max(feitos, Math.round((dias / 7) * (av.dias || T().plano.length || 3)));
+  const fs = Object.values(forcaPorMusculo()), forca = fs.length ? Math.round(fs.reduce((t, x) => t + x.pct, 0) / fs.length) : null;
+  const rec = recordes(hoje(), Math.max(1, dias)).length;
+  return `
+    <section class="programa">
+      <small>Teu programa</small>
+      <b>Semana ${semanas} desde a avaliação</b>
+      <span class="data-prog">Avaliação em ${dataCurta(desde)}</span>
+      <div class="numeros-prog">
+        <span><small>treinos</small><b>${feitos}${previstos ? ` de ${previstos}` : ""}</b></span>
+        <span><small>força (2 sem.)</small><b class="${forca > 0 ? "sobe" : forca < 0 ? "desce" : ""}">${forca == null ? "—" : `${forca > 0 ? "+" : ""}${forca}%`}</b></span>
+        <span><small>recordes</small><b class="ouro">${rec}</b></span>
+      </div>
     </section>`;
 }
+
+function secaoSemanaLeve() {
+  const leve = semanaLeve(), b = blocoAtual();
+  if (b && !b.acabou) return `<p class="bloco-status ${b.deload ? "deload" : ""}">Semana <b>${b.semana}</b> de ${b.semanas} do bloco${b.deload ? ": semana de recuperação. Menos séries e 10% menos carga." : ""}</p>`;
+  if (leve) return `
+    <section class="caixa leve-ativa">
+      <h2>Semana leve até ${dataCurta(leve.fim)}</h2>
+      <p>Menos séries e 10% menos carga, para o corpo se recuperar.</p>
+      <button class="link" data-acao="encerrar-semana-leve">Encerrar antes</button>
+    </section>`;
+  if (!T().sessoes.length) return "";
+  const s = sinaisSemanaLeve();
+  return `
+    <section class="caixa sinais-semana ${s.propor ? "propor" : ""}">
+      <div class="titulo-linha"><h2>Semana leve</h2><small>${s.ativos} de ${s.sinais.length} sinais · ${s.propor ? "o corpo está pedindo" : "ainda não"}</small></div>
+      <ul class="grade-sinais">${s.sinais.map((x) => `<li class="${x.ativo ? "on" : ""}"><i></i><b>${esc(x.nome)}</b><small>${esc(x.detalhe)}</small></li>`).join("")}</ul>
+      ${s.propor ? `<button class="botao escuro cheio" data-acao="iniciar-semana-leve">Fazer a semana leve (7 dias)</button>`
+        : `<p class="dica">Com 3 sinais o personal propõe 7 dias com menos séries e 10% menos carga.</p>`}
+    </section>`;
+}
+
+function telaPersonal() {
+  const sug = sugestoesPersonal();
+  return `
+    ${cartaoPrograma()}
+    <section class="secao">
+      <h2>Sugestões da semana</h2>
+      ${sug.length ? `<ul class="sugestoes">${sug.map((x) => `
+        <li class="caixa">
+          <div class="sug-cab"><span class="ic-sug ${x.tom}">${x.icone}</span><span><b>${esc(x.titulo)}</b><small>${esc(x.texto)}</small></span></div>
+          <div class="par botoes">${x.sim}${x.nao}</div>
+        </li>`).join("")}</ul>`
+      : `<p class="caixa vazio">${T().sessoes.length ? "Nada para mudar agora. O personal olha de novo a cada treino." : "As sugestões aparecem depois dos primeiros treinos."}</p>`}
+    </section>
+    ${secaoSemanaLeve()}
+    ${ui.narracaoPersonal || NARRAR_PERSONAL.revisao ? `
+    <section class="comentario-personal">
+      <span class="rotulo-mini">${ICONE_BRILHO}Comentário do personal</span>
+      ${ui.narracaoPersonal ? `<p>${esc(ui.narracaoPersonal)}</p>` : `<p>O personal olha a semana inteira e comenta o que está indo bem e o que ajustar.</p>`}
+      ${NARRAR_PERSONAL.revisao ? `<button class="link" data-acao="narrar-personal">${ui.narracaoPersonal ? "Pedir de novo" : "Pedir o comentário"}</button>` : ""}
+    </section>` : ""}
+    <button class="botao fraco cheio" data-acao="abrir-avaliacao">${S.personal.avaliacao ? "Refazer avaliação e programa" : "Avaliação com o personal"}</button>`;
+}
+
+TELAS.personal = {
+  titulo: "Personal", aba: "treino", html: telaPersonal,
+  sub: () => { const a = S.personal.avaliacao; return a ? `${FOCOS[a.foco] || "Hipertrofia"} · ${a.dias} dias · ${{ iniciante: "iniciante", intermediario: "intermediário", avancado: "avançado" }[a.nivel] || ""}` : "Sem avaliação"; },
+};
 
 // ---------- cronômetro de descanso ----------
 // Na tela do treino ele é um cartão com o anel do tempo; fora dela, a barra fixa embaixo
@@ -158,6 +265,20 @@ Object.assign(ACOES, {
   },
   "iniciar-semana-leve"() { iniciarSemanaLeve(); render(); avisar("Semana leve: os próximos treinos já vêm reduzidos"); },
   "encerrar-semana-leve"() { encerrarSemanaLeve(); render(); avisar("Semana leve encerrada"); },
+  "dispensar-sugestao"(b) {
+    S.personal.dispensadas = { ...(S.personal.dispensadas || {}), [b.dataset.id]: hoje() };
+    salvar(); render();
+  },
+  // lacuna do plano: o exercício entra no dia que mais treina aquele músculo, 3 séries de 10 a 15
+  "adicionar-lacuna"(b) {
+    const plano = T().plano, g = b.dataset.g, ex = b.dataset.ex;
+    const conta = (d) => d.ex.filter((x) => exercicio(x.ex).g === g || (g === "posterior" && exercicio(x.ex).g === "quadriceps")).length;
+    const dia = [...plano].sort((a, c) => conta(c) - conta(a))[0];
+    if (!dia) return;
+    dia.ex.push({ ex, series: 3, min: 10, max: 15 });
+    salvar(); render();
+    avisar(`${nomeEx(ex)} entrou em ${dia.nome}`, () => { const k = dia.ex.findIndex((x) => x.ex === ex); if (k >= 0) dia.ex.splice(k, 1); salvar(); });
+  },
   "trocar-exercicio"(b) {
     trocarNoPlano(b.dataset.de, b.dataset.para);
     render();
@@ -166,7 +287,7 @@ Object.assign(ACOES, {
   async "narrar-personal"(b) {
     b.disabled = true; b.textContent = "O personal está escrevendo…";
     try { ui.narracaoPersonal = await NARRAR_PERSONAL.revisao(); } catch (e) { ui.narracaoPersonal = e.message || "Não deu para falar com a IA agora."; }
-    if (ui.aba === "treino") render();
+    if (ui.aba === "personal" || ui.aba === "treino") render();
   },
   "mais-descanso"() { if (ui.descanso) { ui.descanso.fim += 15000; ui.descanso.total += 15; atualizarDescanso(); } },
   "menos-descanso"() { if (ui.descanso) { ui.descanso.fim -= 15000; atualizarDescanso(); } },

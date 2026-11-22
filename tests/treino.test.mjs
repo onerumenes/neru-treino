@@ -28,19 +28,28 @@ test("1RM conta as repetições que sobraram; sem RIR, conta como falha", () => 
   assert.equal(e1rm(0, 5, 2), 0);
 });
 
-test("série efetiva: perto da falha vale 1, longe vale menos, sem RIR conta como 2", () => {
+test("série efetiva: de 0 a 3 sobrando vale 1, longe da falha vale menos, sem RIR conta cheio", () => {
   assert.equal(estimuloSerie({ reps: 8, rir: 1 }), 1);
-  assert.equal(estimuloSerie({ reps: 8, rir: 5 }), 0.5);
-  assert.equal(estimuloSerie({ reps: 8 }), 0.95);
-  assert.equal(estimuloSerie({ reps: 3, rir: 0 }), 0.7, "série muito curta rende um pouco menos");
+  assert.equal(estimuloSerie({ reps: 8, rir: 3 }), 1);
+  assert.equal(estimuloSerie({ reps: 8, rir: 5 }), 0.65);
+  assert.equal(estimuloSerie({ reps: 8 }), 1);
+  assert.equal(estimuloSerie({ reps: 25, rir: 1 }), 1, "série longa perto da falha vale o mesmo");
+  assert.equal(estimuloSerie({ reps: 3, rir: 0 }), 1);
 });
 
-test("supino conta meia série para tríceps e ombro", () => {
-  S.treino.sessoes = [sessao(h, [{ ex: "supino_reto", series: [1, 2, 3].map(() => ({ kg: 100, reps: 5, rir: 0, ok: true })) }])];
+test("supino conta pouco para o tríceps e meia para o ombro; agachamento não conta para posterior", () => {
+  S.treino.sessoes = [sessao(h, [
+    { ex: "supino_reto", series: [1, 2, 3].map(() => ({ kg: 100, reps: 5, rir: 0, ok: true })) },
+    { ex: "agachamento", series: [1, 2].map(() => ({ kg: 100, reps: 8, rir: 2, ok: true })) },
+    { ex: "puxada_frente", series: [1, 2].map(() => ({ kg: 60, reps: 10, rir: 2, ok: true })) },
+  ])];
   const v = volumeFeito();
-  assert.equal(v.peito, 2.6);
-  assert.equal(v.triceps, 1.3);
-  assert.equal(v.ombros, 1.3);
+  assert.equal(v.peito, 3);
+  assert.equal(v.triceps, 0.8);
+  assert.equal(v.ombros, 1.5);
+  assert.equal(v.gluteos, 1);
+  assert.equal(v.posterior, undefined);
+  assert.equal(v.biceps, 1.5);
 });
 
 test("recuperação: baixa logo depois do treino, volta com os dias", () => {

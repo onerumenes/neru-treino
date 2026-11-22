@@ -3,63 +3,62 @@
 //   recuperação: quanto o músculo já se recuperou do cansaço dos últimos treinos
 //   força:       se o 1RM estimado dos exercícios do músculo está subindo
 //
-// Base: hipertrofia depende de séries perto da falha, quase não da carga (Schoenfeld 2017, Lopez 2021,
-// Robinson 2024, Refalo 2023); série indireta vale meia (Pelland 2024); carga pesada rende mais força
-// e treino até a falha pede mais tempo de recuperação (Morán-Navarro 2017). Os números das tabelas são
-// a tradução dessas conclusões em regra, não coeficientes medidos.
+// Base (relatório "Ciência do treino para o app", 2026-11): hipertrofia depende de séries perto da falha e quase
+// não da carga entre ~5 e 30 repetições (Schoenfeld 2017, Lopez 2021, Carvalho 2022, ACSM 2026); de 0 a ~3 RIR o
+// crescimento é praticamente o mesmo e as pessoas erram o RIR em ~1 repetição (Refalo 2024, Robinson 2024,
+// Halperin 2022); série indireta vale meia como padrão (Pelland 2024), corrigida onde há crescimento medido;
+// treino até a falha pede mais recuperação (Morán-Navarro 2017). Os números são convenção a partir dessas
+// conclusões, não coeficientes medidos.
 
 import { S, hoje, somaDias, paraData, salvar, medidasAte } from "./store.js";
 import { T, GRUPOS, exercicio } from "./treino.js";
 import { melhorDa, emRecuperacao } from "./personal.js";
 import { nivelDor } from "./corpo.js";
 
-// ---------- músculos secundários (cada série conta 0,5 neles) ----------
-const SUPINOS = ["triceps", "ombros"], PUXADAS = ["biceps"], REMADAS = ["biceps", "ombros"], AGACHAMENTOS = ["gluteos"];
+// ---------- músculos secundários ----------
+// Quanto cada série conta nos músculos que ajudam. Padrão 0,5 (Pelland 2024); exceções com crescimento medido:
+//   supino → tríceps fraco (Brandão 2020: o supino sozinho não fez o tríceps crescer de forma significativa) = 0,25
+//   puxada e barra → bíceps perto de uma rosca (Gentil 2015) = 0,75; remada → metade (Mannarino 2021) = 0,5
+//   agachamento e leg press → posteriores ≈ 0 (Kubo 2019): não entram; glúteo entra (Kubo 2019, Plotkin 2023)
+const SUPINOS = { triceps: 0.25, ombros: 0.5 }, PUXADAS = { biceps: 0.75 }, REMADAS = { biceps: 0.5, ombros: 0.5 }, AGACHAMENTOS = { gluteos: 0.5 };
 export const SECUNDARIOS = {
   supino_reto: SUPINOS, supino_inclinado: SUPINOS, supino_reto_halteres: SUPINOS, supino_inclinado_halteres: SUPINOS,
-  supino_maquina: SUPINOS, flexao: SUPINOS, paralelas: SUPINOS,
+  supino_maquina: SUPINOS, flexao: SUPINOS, paralelas: { triceps: 0.5, ombros: 0.5 },
   barra_fixa: PUXADAS, puxada_frente: PUXADAS, puxada_triangulo: PUXADAS,
   remada_curvada: REMADAS, remada_baixa: REMADAS, remada_unilateral: REMADAS, remada_maquina: REMADAS, remada_cavalinho: REMADAS,
-  levantamento_terra: ["posterior", "gluteos", "quadriceps"],
-  desenvolvimento_halteres: ["triceps"], desenvolvimento_barra: ["triceps"], desenvolvimento_maquina: ["triceps"],
-  crucifixo_inverso: ["costas"], face_pull: ["costas"],
-  rosca_direta: ["antebraco"], rosca_martelo: ["antebraco"], rosca_inversa: ["biceps"],
-  supino_fechado: ["peito", "ombros"],
+  levantamento_terra: { posterior: 0.5, gluteos: 0.5, quadriceps: 0.5 },
+  desenvolvimento_halteres: { triceps: 0.5 }, desenvolvimento_barra: { triceps: 0.5 }, desenvolvimento_maquina: { triceps: 0.5 },
+  crucifixo_inverso: { costas: 0.5 }, face_pull: { costas: 0.5 },
+  rosca_direta: { antebraco: 0.5 }, rosca_martelo: { antebraco: 0.5 }, rosca_inversa: { biceps: 0.5 },
+  supino_fechado: { peito: 0.5, ombros: 0.5 },
   agachamento: AGACHAMENTOS, agachamento_smith: AGACHAMENTOS, agachamento_hack: AGACHAMENTOS, leg_press: AGACHAMENTOS,
   afundo: AGACHAMENTOS, agachamento_bulgaro: AGACHAMENTOS,
-  stiff: ["gluteos"], bom_dia: ["gluteos", "costas"],
-  elevacao_pelvica: ["posterior"],
+  stiff: { gluteos: 0.5 }, bom_dia: { gluteos: 0.5, costas: 0.5 },
+  elevacao_pelvica: { posterior: 0.5 },
 };
-const SECUNDARIO = 0.5;
 
 // Músculos que a série trabalha: [[grupo, peso]]. Exercício criado pela pessoa conta só no músculo dele.
 export function musculosDo(exId) {
   const g = exercicio(exId).g;
   if (!g) return [];
-  return [[g, 1], ...(SECUNDARIOS[exId] || []).filter((x) => x !== g).map((x) => [x, SECUNDARIO])];
+  return [[g, 1], ...Object.entries(SECUNDARIOS[exId] || {}).filter(([x, p]) => x !== g && p > 0)];
 }
 
 // ---------- estímulo de uma série ----------
-export const RIR_PADRAO = 2; // série sem RIR anotado conta como RIR 2
+export const RIR_PADRAO = 2; // série sem RIR anotado conta como RIR 2 (dentro da faixa que vale cheio)
 const rirDe = (s) => (s.rir == null || s.rir === "" || !Number.isFinite(Number(s.rir)) ? RIR_PADRAO : Number(s.rir));
 
-// Perto da falha vale cheio; de 0 a 2 o efeito é quase o mesmo, e cai à medida que sobram repetições
+// Perto da falha vale cheio. De 0 a 3 repetições sobrando o crescimento é praticamente o mesmo, e a estimativa
+// erra ~1 repetição: diferenciar 0, 1, 2 e 3 seria precisão falsa. O desconto começa em 4 e cresce devagar.
 export function proximidade(rir) {
-  if (rir <= 1) return 1;
-  if (rir <= 2) return 0.95;
-  if (rir <= 3) return 0.85;
-  if (rir <= 4) return 0.7;
-  if (rir <= 5) return 0.5;
-  return 0.25;
+  if (rir <= 3) return 1;
+  if (rir <= 4) return 0.85;
+  if (rir <= 5) return 0.65;
+  return 0.35;
 }
-// Séries muito curtas (carga muito alta) rendem um pouco menos de hipertrofia por série; muito longas também
-export function fatorReps(reps) {
-  if (reps <= 3) return 0.7;
-  if (reps <= 5) return 0.85;
-  if (reps <= 30) return 1;
-  return 0.8;
-}
-export const estimuloSerie = (s) => (Number(s.reps) > 0 ? proximidade(rirDe(s)) * fatorReps(Number(s.reps)) : 0);
+// O número de repetições não muda o estímulo de uma série perto da falha (de ~5 a 30+ o resultado é equivalente).
+// Não há fator por faixa de repetições para a hipertrofia.
+export const estimuloSerie = (s) => (Number(s.reps) > 0 ? proximidade(rirDe(s)) : 0);
 
 const r1 = (x) => Math.round(x * 10) / 10;
 const sessoesEntre = (ini, ate) => T().sessoes.filter((s) => s.d > ini && s.d <= ate);
