@@ -32,7 +32,7 @@ function telaVazia() {
   return `
     <section class="caixa sem-plano">
       <h2>Monta teu plano de treino</h2>
-      <p>O app guarda tuas séries e cargas e sugere quanto carregar na próxima vez. Dá para começar por um modelo de 5 dias e trocar o que quiser, ou montar do zero.</p>
+      <p>O app guarda tuas séries e cargas e mostra o que fizeste da última vez. Dá para começar por um modelo de 5 dias e trocar o que quiser, ou montar do zero.</p>
       <button class="botao escuro cheio" data-acao="usar-modelo">Usar o modelo de 5 dias</button>
       <button class="botao fraco cheio" data-acao="plano-do-zero">Montar do zero</button>
       <button class="botao fraco cheio" data-acao="abrir-avaliacao">Avaliação com o personal (monta o programa para ti)</button>
@@ -223,7 +223,7 @@ function exercicioAtual(a) {
 // valores que a série da vez mostra antes de mexer: o que já foi digitado, o alvo, a última vez ou o mínimo da faixa
 function valoresDaVez(x, j, sug) {
   const s = x.series[j], ant = sug.ultima?.series || [];
-  const kg = s.kg !== "" && s.kg != null ? Number(s.kg) : Number(sug.kg) || 0;
+  const kg = s.kg !== "" && s.kg != null ? Number(s.kg) : Number(ant[j]?.kg ?? ant[ant.length - 1]?.kg) || 0;
   const reps = s.reps !== "" && s.reps != null ? Number(s.reps) : Number(s.alvoReps ?? ant[j]?.reps ?? x.min) || x.min;
   const rir = s.rir !== "" && s.rir != null ? Number(s.rir) : s.alvoRir ?? 2;
   return { kg, reps, rir };
@@ -243,7 +243,7 @@ function serieDaVez(x, i, j, completo, sug) {
   const s = x.series[j], v = valoresDaVez(x, j, sug), principal = s.tipo === "principal";
   const titulo = principal ? "Série principal" : s.tipo === "recuo" ? `Recuo ${x.series.slice(0, j + 1).filter((z) => z.tipo === "recuo").length}` : `Série ${j + 1} de ${x.series.length}`;
   const alvo = principal && s.alvoReps ? `alvo: ${s.kg !== "" ? fmtKg(Number(s.kg)) + " × " : ""}${s.alvoReps}${completo ? `, sobrando ${s.alvoRir}` : ""}` : `faixa: ${x.min} a ${x.max}`;
-  const um = completo && v.kg > 0 ? e1rm(v.kg, v.reps, v.rir) : 0, antes = um ? ultimoMelhor(x.ex) : null, dif = antes ? um - antes : 0;
+  const ant = sug.ultima?.series?.[j];
   return `
     <div class="serie-vez">
       <div class="cab-vez"><b>${titulo}</b><small>${esc(alvo)}</small></div>
@@ -259,8 +259,7 @@ function serieDaVez(x, i, j, completo, sug) {
         ${stepper("reps", i, j, v.reps, "Repetições")}
         ${completo ? stepper("rir", i, j, v.rir, "Sobraram (RIR)") : ""}
       </div>
-      ${completo && um ? `<div class="um-rm"><span><small>1RM estimado ${principal ? "hoje" : "nesta série"}</small><b>${fmtKg(Math.round(um * 2) / 2)}</b></span>
-        <span>${antes ? (Math.abs(dif) < 0.5 ? "igual ao último treino" : `${dif > 0 ? "+" : "−"}${fmtKg(Math.round(Math.abs(dif) * 2) / 2)} desde o último treino`) : "primeira vez"}</span></div>` : ""}
+      <div class="um-rm"><span><small>Último treino${sug.ultima ? `, ${dataCurta(sug.ultima.d)}` : ""}</small><b>${ant ? `${Number(ant.kg) > 0 ? fmtKg(Number(ant.kg)) + " × " : ""}${ant.reps}${completo && ant.rir !== "" && ant.rir != null ? ` <small>sobraram ${ant.rir}</small>` : ""}` : sug.ultima ? "sem essa série" : "primeira vez"}</b></span></div>
       <button class="botao escuro cheio" data-acao="marcar-serie" data-i="${i}" data-j="${j}">Feita</button>
     </div>`;
 }
@@ -286,7 +285,6 @@ function cartaoExercicio(a, i, completo) {
           ${completo ? `<small class="rotulo-ex">${esc(rotulo)}</small>` : ""}
           <h2>${esc(x.nome)}</h2>
           <span class="chips-musc">${ms.length ? `<span class="principal">${esc(GRUPOS[ms[0][0]])}</span>` : ""}${completo ? ms.slice(1).map(([g]) => `<span>${esc(GRUPOS[g])}</span>`).join("") : ""}</span>
-          ${completo && (princ ? sugerirPrincipal(x.ex, x.min).motivo : sug.motivo) ? `<p class="sugestao">${esc(princ ? sugerirPrincipal(x.ex, x.min).motivo : sug.motivo)}</p>` : ""}
         </div>
         <div class="mini-corpo">${miniCorpo(x.ex)}</div>
       </div>

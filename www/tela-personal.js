@@ -118,7 +118,7 @@ function barrasLeve(s) {
 export function cartaoPersonalInicio() {
   const sug = sugestoesPersonal(), av = S.personal.avaliacao, leve = semanaLeve(), temHist = T().sessoes.length > 0;
   const s = temHist && !leve ? sinaisSemanaLeve() : null;
-  const sub = sug.length ? plural(sug.length, "sugestão", "sugestões") + " para esta semana" : av ? "nada para mudar agora" : "sem avaliação ainda";
+  const sub = av ? "programa e avaliação" : "sem avaliação ainda";
   const aviso = leve ? `<b>Semana leve até ${dataCurta(leve.fim)}.</b> Menos séries e 10% menos carga.`
     : sug[0] ? `<b>${esc(sug[0].titulo)}.</b> ${esc(sug[0].texto)}`
     : !av ? "Faz a avaliação para o personal montar o programa pelos teus dias, tempo, nível e lesões." : "";
@@ -129,8 +129,6 @@ export function cartaoPersonalInicio() {
         <span class="oque"><b>Personal</b><small>${esc(sub)}</small></span>
         <span class="seta-dir" aria-hidden="true">›</span>
       </span>
-      ${aviso ? `<span class="aviso-personal">${aviso}</span>` : ""}
-      ${s ? `<span class="linha-leve">${barrasLeve(s)}Semana leve: ${s.ativos} de ${s.sinais.length} sinais${s.propor ? ", o corpo está pedindo" : ", ainda não"}</span>` : ""}
     </button>`;
 }
 

@@ -107,14 +107,8 @@ function cartaoRefeicao(r, lista, d, alvo, dica) {
 
 function telaHoje() {
   const d = ui.data, t = totais(d), m = S.metas, itens = diaDe(d).itens;
-  const dica = d === hoje() ? dicaProteina() : null;
-  // o quanto cada refeição que falta deveria ter, pelo que sobra da meta
-  const sug = d === hoje() && m ? sugerirResto(d) : null;
-  const alvo = Object.fromEntries((sug?.refeicoes || []).map((r) => [r.ref, r]));
-  const refs = REFEICOES.map((r) => {
-    const lista = itens.filter((i) => i.ref === r.id);
-    return cartaoRefeicao(r, lista, d, alvo[r.id], dica && dica.ref === r.id && !lista.length ? dica : null);
-  }).join("");
+  // Sem dica de proteína nem sugestão de kcal por refeição: o Diário só cataloga o que foi comido
+  const refs = REFEICOES.map((r) => cartaoRefeicao(r, itens.filter((i) => i.ref === r.id), d, null, null)).join("");
   return `${painelDia(d, t, m)}${cartaoNutri(d)}
     <section class="secao refeicoes"><h2>Refeições</h2>${refs}</section>
     ${secaoSuplementosDia(d)}`;

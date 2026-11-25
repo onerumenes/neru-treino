@@ -40,13 +40,9 @@ function secaoRelatorio() {
       ${S.relatorios.length > 1 ? `<button class="link fraco" data-acao="relatorios-antigos">Relatórios anteriores</button>` : ""}
     </section>`;
 }
-SECOES.resumo.unshift(secaoAvisos, secaoRelatorio);
+// Avisos e relatório da equipe desligados: o app só registra e mostra (o código fica para voltar se quiser).
 
-// No Diário, só o aviso mais importante, compacto
-AVISOS_DIARIO.push((d) => {
-  const a = avisos(d).find((x) => !x.fixo);
-  return a ? cartaoAviso(a, true) : "";
-});
+
 
 FOLHAS.relatorios = () => `
   <h2 id="folha-titulo">Relatórios anteriores</h2>
@@ -62,7 +58,7 @@ Object.assign(ACOES, {
     avisar(`Feito: ${a.acao.rotulo}. Meta agora em ${S.metas.kcal.toLocaleString("pt-BR")} kcal`);
   },
   "aviso-dispensar"(b) { dispensar(b.dataset.id); render(); },
-  "ver-equipe"() { ui.aba = "equipe"; ui.equipe = "resumo"; render(); window.scrollTo(0, 0); },
+  "ver-equipe"() { ui.aba = "equipe"; ui.equipe = "dieta"; render(); window.scrollTo(0, 0); },
   "gerar-relatorio"() { gerarRelatorio(); render(); },
   "relatorios-antigos"() { abrirFolha({ tipo: "relatorios" }); },
   async "narrar-relatorio"(b) {

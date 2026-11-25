@@ -147,7 +147,7 @@ function secaoAnalise() {
       <p class="dica com-icone"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>${S.cfg.nuvemFotoCorpo ? "As fotos podem ir para a OpenAI (ligado em Ajustes)." : "Analisado pela IA do celular. As fotos não saem do aparelho."}</p>
     </section>`;
 }
-SECOES.corpo.push(secaoAnalise);
+// A análise das fotos pela IA saiu do Registro (o app só cataloga). secaoAnalise fica para voltar se quiser.
 SECOES_FOTOS.push(secaoAnalise);
 
 ACOES["analisar-fotos"] = async (b) => {

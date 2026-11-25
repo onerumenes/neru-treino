@@ -23,11 +23,10 @@ export const NARRAR = { sugestao: null, checkin: null };
 export const AVISOS_DIARIO = [];
 
 // ---------- cartão do dia (Diário) ----------
+// O Diário não mostra mais o check-in nem avisos: o app só registra. Os ganchos de AVISOS_DIARIO ainda entram aqui.
 export function cartaoNutri(d) {
-  const check = d === hoje() && checkinPendente()
-    ? `<button class="aviso-equipe" data-acao="abrir-checkin" data-volta="hoje"><span><b>Check-in da semana</b><small>2 minutos: nutri e personal ajustam comida e treino</small></span><span class="seta-dir" aria-hidden="true">›</span></button>` : "";
   const extras = d === hoje() ? AVISOS_DIARIO.map((fn) => fn(d)).join("") : "";
-  return check || extras ? `<div class="avisos-dia">${check}${extras}</div>` : "";
+  return extras ? `<div class="avisos-dia">${extras}</div>` : "";
 }
 
 // ---------- o que eu como agora? ----------
@@ -207,7 +206,8 @@ function secaoHabitos() {
       <p class="legenda"><span>Últimos ${P.dias} dias com registro. É daqui que saem as sugestões.</span></p>
     </section>`;
 }
-SECOES.resumo.push(secaoNutri, secaoHabitos);
+// O cartão do nutri (check-in, gasto) saiu: o Registro só mostra o que foi feito.
+SECOES.dieta.push(secaoHabitos);
 
 // ---------- ações ----------
 Object.assign(ACOES, {

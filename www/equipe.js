@@ -223,9 +223,9 @@ export function gerarRelatorio(ate = hoje()) {
   return r;
 }
 
-// Chamado ao abrir o app: vence ajustes temporários e gera o relatório da semana se for a hora
+// Chamado ao abrir o app: vence ajustes temporários e recalcula as metas pelo perfil.
+// O relatório semanal não é mais gerado sozinho (o app só cataloga).
 export function iniciarEquipe() {
   revisarTemporario();
   if (S.user && !S.metasManuais) aplicarMetas();
-  if (relatorioPendente()) gerarRelatorio();
 }

@@ -255,7 +255,8 @@ export function sugerirPrincipal(exId, reps) {
 }
 GANCHOS.principal = (exId, nSeries, min, max) => {
   if (!usaPrincipal(exId) || nSeries < 2) return null;
-  const passo = exercicio(exId).passo || 2.5, { kg } = sugerirPrincipal(exId, min);
+  // Carga da última principal, sem progressão calculada (o app só registra; quem decide subir é o Neru)
+  const passo = exercicio(exId).passo || 2.5, kg = ultimaPrincipal(exId)?.serie.kg ?? "";
   return [
     { kg, reps: "", rir: "", ok: false, tipo: "principal", alvoReps: min, alvoRir: ALVO_PRINCIPAL.rir },
     ...Array.from({ length: nSeries - 1 }, () => ({ kg: cargaRecuo(kg, passo), reps: "", rir: "", ok: false, tipo: "recuo", alvoReps: max, alvoRir: 2 })),

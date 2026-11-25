@@ -103,7 +103,7 @@ FORMS.consulta = (form) => {
   if (S.user && !S.metasManuais) aplicarMetas();
   if (S.metas) gerarPlano();
   salvar();
-  fecharFolha(); ui.aba = "equipe"; ui.equipe = "plano"; render(); window.scrollTo(0, 0);
+  fecharFolha(); ui.aba = "equipe"; ui.equipe = "dieta"; render(); window.scrollTo(0, 0);
   avisar(S.perfil.alertas.length ? "Consulta salva. Com os alertas que marcaste, procura também acompanhamento profissional" : "Consulta salva e plano montado");
 };
 
@@ -162,10 +162,9 @@ function secaoConsulta() {
         <button class="botao cheio" data-acao="abrir-consulta">Começar a consulta</button>
       </section>`;
   }
-  const p = S.perfil, pend = retornoPendente();
+  const p = S.perfil;
   return `
     ${p.alertas?.length ? `<div class="confirma"><p>Marcaste na consulta: ${esc(p.alertas.map((a) => ALERTAS[a]).join(", ").toLowerCase())}. Mantém acompanhamento com médico e nutricionista; o app ficou mais conservador nas mudanças${p.alertas.includes("renal") ? " e a meta de proteína está em 0,8 g por kg até um profissional liberar mais" : ""}.</p></div>` : ""}
-    ${pend ? `<button class="aviso-equipe" data-acao="abrir-retorno"><b>Retorno do mês</b><span>Medidas, fotos e revisão do plano</span></button>` : ""}
     <section class="secao">
       <h2>Consulta</h2>
       <p class="texto">Feita em ${dataCurta(p.data)}. Refeições: ${esc(p.refs.map((r) => nomeRef(r).toLowerCase()).join(", "))}.${p.naoCome ? ` Não come: ${esc(p.naoCome)}.` : ""}${p.restricoes?.length ? ` ${esc(p.restricoes.map((r) => RESTRICOES[r]).join(", "))}.` : ""}</p>
@@ -204,7 +203,7 @@ function secaoPlano() {
       <button class="botao fraco cheio" data-acao="gerar-plano">Refazer plano</button>
     </section>`;
 }
-SECOES.plano.push(secaoConsulta, secaoPlano);
+SECOES.dieta.push(secaoPlano, secaoConsulta);
 
 // ---------- ações ----------
 Object.assign(ACOES, {

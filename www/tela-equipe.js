@@ -1,4 +1,4 @@
-// Aba Equipe: o que o nutri e o personal acompanham. Sub-abas Resumo, Corpo e Plano.
+// Aba Registro (antiga Equipe): o catálogo do que foi feito, sem conselhos. Sub-abas Dieta, Físico e Treino.
 
 import { S, hoje, somaDias, paraData, totais, pesos, MEDIDAS } from "./store.js";
 import { $, esc, int, dec, lerNum, dataCurta, ui, ACOES, FORMS, FOLHAS, MUDANCAS, render, avisar, abrirFolha, fecharFolha } from "./base.js";
@@ -7,9 +7,11 @@ import {
   POSES, DICAS_FOTO, composicao, registrarMedidas, ultimasMedidas, guardarFoto, apagarFoto, sessoesDeFotos, urlFoto,
 } from "./corpo.js";
 
-export const SUBABAS = [["resumo", "Resumo"], ["corpo", "Corpo"], ["plano", "Plano"]];
-// Outros módulos penduram seções aqui: { resumo: [fn], corpo: [fn], plano: [fn] }, cada fn devolve HTML
-export const SECOES = { resumo: [], corpo: [], plano: [] };
+export const SUBABAS = [["dieta", "Dieta"], ["fisico", "Físico"], ["treino", "Treino"]];
+// Outros módulos penduram seções aqui: { dieta: [fn], fisico: [fn], treino: [fn] }, cada fn devolve HTML
+export const SECOES = { dieta: [], fisico: [], treino: [] };
+// Nomes antigos das sub-abas (lembretes e botões de versões anteriores)
+const ANTIGAS = { resumo: "dieta", plano: "dieta", corpo: "fisico" };
 
 // ---------- gráfico de linha simples ----------
 export function grafico(pontos, rotulo, { L = 320, A = 96 } = {}) {
@@ -196,19 +198,19 @@ export async function hidratarFotos(raiz = document) {
 
 // ---------- tela ----------
 export const telaEquipe = {
-  titulo: "Equipe",
+  titulo: "Registro",
   html() {
-    const sub = SUBABAS.some(([k]) => k === ui.equipe) ? ui.equipe : "resumo";
+    if (ANTIGAS[ui.equipe]) ui.equipe = ANTIGAS[ui.equipe];
+    const sub = SUBABAS.some(([k]) => k === ui.equipe) ? ui.equipe : "dieta";
     const seg = `<div class="segmentos" role="tablist">${SUBABAS.map(([k, nome]) =>
       `<button role="tab" data-acao="sub-equipe" data-sub="${k}" aria-selected="${k === sub}">${nome}</button>`).join("")}</div>`;
     const base = {
-      resumo: () => secaoSemana() + secaoSono(),
-      corpo: () => secaoPeso() + secaoMedidas() + secaoFotos(),
-      plano: () => "",
+      dieta: () => secaoSemana() + secaoSono(),
+      fisico: () => secaoPeso() + secaoMedidas() + secaoFotos(),
+      treino: () => "",
     }[sub]();
     const extra = SECOES[sub].map((fn) => fn()).join("");
-    // seções dos módulos de nutri, personal e equipe vêm antes das listas
-    return seg + (sub === "resumo" ? extra + base : base + extra);
+    return seg + (base + extra || `<p class="vazio">Nada registrado ainda.</p>`);
   },
   depois() { hidratarFotos($("#tela")); },
 };

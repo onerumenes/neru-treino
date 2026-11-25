@@ -12,6 +12,7 @@ import { descreverCardio } from "./cardio.js";
 import { svgCorpo } from "./avatar.js";
 import { comCorpo, desenhar } from "./tela-perfil.js";
 import { GRUPO_DE } from "./tela-treino-corpo.js";
+import { SECOES } from "./tela-equipe.js";
 
 const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
 const n1 = (x) => (Math.round(x * 10) / 10).toLocaleString("pt-BR");
@@ -290,3 +291,14 @@ MUDANCAS.push((el) => {
   }
   return false;
 });
+
+// ---------- Registro > Treino: o que foi feito, sem sugestões ----------
+function secaoTreinosSemana() {
+  const ss = T().sessoes.filter((s) => s.d > somaDias(hoje(), -7)).reverse();
+  return `
+    <section class="secao">
+      <div class="titulo-linha"><h2>Últimos 7 dias</h2>${T().sessoes.length ? `<button class="link" data-acao="aba" data-aba="historico">Histórico</button>` : ""}</div>
+      ${ss.length ? `<ul class="caixa lista-sessoes">${ss.map(linhaSessao).join("")}</ul>` : `<p class="vazio">Nenhum treino nos últimos 7 dias.</p>`}
+    </section>`;
+}
+SECOES.treino.push(secaoTreinosSemana, secaoSemanas, secaoMusculos, () => secaoRecordes());

@@ -444,7 +444,7 @@ Object.assign(ACOES, {
     }, 90);
   },
   // atalho do perfil para comparar as fotos na aba Equipe > Corpo
-  "sub-equipe-corpo"() { ui.aba = "equipe"; ui.equipe = "corpo"; render(); window.scrollTo(0, 0); },
+  "sub-equipe-corpo"() { ui.aba = "equipe"; ui.equipe = "fisico"; render(); window.scrollTo(0, 0); },
 });
 
 FORMS.medida = (form) => {

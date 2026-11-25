@@ -220,12 +220,17 @@ function exDaSessao(exId, nSeries, min, max) {
     }
     return { ex: exId, nome: nomeEx(exId), min, max, series };
   }
-  const sug = sugerir(exId, min, max);
-  let n = nSeries, kg = sug.kg ?? "";
-  if (GANCHOS.deload) ({ nSeries: n, kg } = GANCHOS.deload(nSeries, kg, exercicio(exId).passo || 2.5));
+  // Cada série começa com a carga da mesma série na última vez (sem progressão calculada)
+  const ant = ultimaVez(exId)?.series || [], passo = exercicio(exId).passo || 2.5;
+  const kgDa = (j) => ant[Math.min(j, ant.length - 1)]?.kg ?? "";
+  let n = nSeries, cargas = Array.from({ length: nSeries }, (_, j) => kgDa(j));
+  if (GANCHOS.deload) {
+    n = GANCHOS.deload(nSeries, "", passo).nSeries;
+    cargas = cargas.slice(0, Math.max(1, n)).map((kg) => GANCHOS.deload(1, kg, passo).kg);
+  }
   return {
     ex: exId, nome: nomeEx(exId), min, max,
-    series: Array.from({ length: n }, () => ({ kg, reps: "", rir: "", ok: false })),
+    series: cargas.slice(0, Math.max(1, n)).map((kg) => ({ kg, reps: "", rir: "", ok: false })),
   };
 }
 

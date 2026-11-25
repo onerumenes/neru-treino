@@ -25,16 +25,16 @@ export function planoLembretes() {
       if (!refs.includes(r.id)) return;
       const on = r.id === "cafe" ? somaMin(acorda, 40) : r.id === "pos_treino" ? (p.treinoHora ? somaMin(hm(p.treinoHora), 75) : null) : hm(HORA_REF[r.id]);
       if (!on) return;
-      lista.push(base(100 + i, r.nome, r.id === "cafe" ? "Bom dia! Abre o app para ver a meta de hoje." : "Na dúvida do que comer, toca em \"O que eu como agora?\".", on, { aba: "hoje" }));
+      lista.push(base(100 + i, r.nome, `Hora de registrar ${r.nome.toLowerCase()}.`, on, { aba: "hoje" }));
     });
   }
   if (L.pesagem) {
-    for (const wd of [2, 4, 6]) lista.push(base(200 + wd, "Pesagem", "Em jejum, depois do banheiro. Leva 10 segundos.", { weekday: wd, ...somaMin(acorda, 5) }, { aba: "equipe", sub: "corpo" }));
+    for (const wd of [2, 4, 6]) lista.push(base(200 + wd, "Pesagem", "Registrar o peso de hoje.", { weekday: wd, ...somaMin(acorda, 5) }, { aba: "equipe", sub: "fisico" }));
   }
-  if (L.checkin) lista.push(base(300, "Check-in da semana", "2 minutos para o nutri ajustar teu plano.", { weekday: 1, hour: 10, minute: 0 }, { aba: "equipe", acao: "checkin" }));
+  // O check-in da semana saiu (o app só cataloga); a opção L.checkin fica guardada mas não agenda nada
   if (L.treino) {
     const quando = somaMin(hm(p.treinoHora, "18:00"), -60);
-    for (const wd of L.diasTreino || []) lista.push(base(400 + wd, "Treino daqui a 1 hora", "Come algo com carboidrato e proteína agora, se ainda não comeu.", { weekday: wd, ...quando }, { aba: "treino" }));
+    for (const wd of L.diasTreino || []) lista.push(base(400 + wd, "Treino daqui a 1 hora", "Hoje tem treino.", { weekday: wd, ...quando }, { aba: "treino" }));
   }
   return lista;
 }
@@ -66,7 +66,7 @@ const marcado = (c) => (c ? "checked" : "");
 SECOES_AJUSTES.push(() => {
   const L = S.cfg.lembretes;
   if (!lembretesExistem()) {
-    return `<section class="secao"><h2>Lembretes</h2><p class="texto">Os lembretes de refeição, pesagem, check-in e treino funcionam no app Android a partir do APK 3.</p></section>`;
+    return `<section class="secao"><h2>Lembretes</h2><p class="texto">Os lembretes de refeição, pesagem e treino funcionam no app Android a partir do APK 3.</p></section>`;
   }
   return `
     <section class="secao">
@@ -75,7 +75,6 @@ SECOES_AJUSTES.push(() => {
       <div ${L.ativo ? "" : "hidden"}>
         <label class="chave-liga"><input type="checkbox" id="lem-refeicoes" ${marcado(L.refeicoes)}><span>Refeições (pelos horários da consulta)</span></label>
         <label class="chave-liga"><input type="checkbox" id="lem-pesagem" ${marcado(L.pesagem)}><span>Pesagem (seg, qua e sex de manhã)</span></label>
-        <label class="chave-liga"><input type="checkbox" id="lem-checkin" ${marcado(L.checkin)}><span>Check-in da semana (domingo às 10h)</span></label>
         <label class="chave-liga"><input type="checkbox" id="lem-treino" ${marcado(L.treino)}><span>Treino (1 hora antes)</span></label>
         <fieldset class="opcoes dias-treino" ${L.treino ? "" : "hidden"}><legend>Dias de treino</legend>
           ${DIAS.map(([n, nome]) => `<label><input type="checkbox" name="dia-treino" value="${n}" ${marcado((L.diasTreino || []).includes(n))}><span>${nome}</span></label>`).join("")}
